@@ -38,10 +38,23 @@ def load_locations_from_file(path):
             try:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    dataset = row.get("dataset") or row.get("sample")
-                    if not dataset or "path" not in row:
-                        raise ValueError("Missing required keys in CSV header.")
-                    mapping[dataset] = row["path"]
+                    name = row.get("dataset") or row.get("sample") or row.get("name")
+                    if not name:
+                        raise ValueError("Missing dataset/sample/name column.")
+
+                    # Full-field format
+                    if "output_folder" in row:
+                        mapping[name] = {
+                            "output_folder": row["output_folder"],
+                            "output_bucket": row.get("output_bucket"),
+                            "output_file_prefix": row.get("output_file_prefix"),
+                        }
+                        mapping[name] = {k: v for k, v in mapping[name].items() if v}
+                    # Legacy path-based format
+                    elif "path" in row:
+                        mapping[name] = row["path"]
+                    else:
+                        raise ValueError("CSV must have either 'path' or 'output_folder'.")
             except Exception:
                 f.seek(0)
                 reader = csv.reader(f)
