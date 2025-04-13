@@ -73,28 +73,22 @@ Supported file formats:
 
 **YAML or JSON**
 ```yaml
-sample1: gs://bucket/sample1.vcf
-sample2: s3://bucket/sample2.vcf
+sample1: gs://bucket/folder1/
+sample2: s3://bucket/folder2/
 ```
 
 **CSV**  
 With headers:
 ```csv
 dataset,path
-sample1,gs://bucket/sample1.vcf
-sample2,s3://bucket/sample2.vcf
-```
-
-Legacy-compatible:
-```csv
-sample,path
-sample1,gs://bucket/sample1.vcf
+sample1,gs://bucket/folder1/
+sample2,s3://bucket/folder2/
 ```
 
 Without headers:
 ```csv
-sample1,gs://bucket/sample1.vcf
-sample2,s3://bucket/sample2.vcf
+sample1,gs://bucket/folder1/
+sample2,s3://bucket/folder2/
 ```
 
 ---
@@ -112,5 +106,64 @@ SET_METADATA: |
 ## ⚠️ Notes
 
 - You must provide **either** `LOCATIONS` **or** `LOCATIONS_FILE`, not both.
-- Cloud paths (`gs://`, `s3://`) are auto-translated to Miqa's expected format. If you are using `OUTPUTS_ALREADY_ON_CLOUD: true` and you pass a value in locations without the cloud-path prefix, it will be assumed to be the output folder and will use your default output bucket on Miqa. If you need to specify output buckets for individual datasets, pass the full cloud path. If you need to specify an output bucket override to apply to all datasets, you may pass this in `OUTPUT_BUCKET_OVERRIDE`.
+- Cloud paths (`gs://`, `s3://`) are auto-translated to Miqa's expected format.
 - Local paths are used as-is when uploading from disk.
+
+
+---
+
+## 📦 Optional: OUTPUT_BUCKET_OVERRIDE
+
+If you are using `OUTPUTS_ALREADY_ON_CLOUD: true` and pass values in `LOCATIONS` that are not full `gs://` or `s3://` paths (e.g. just folders), Miqa will use its **default bucket**.
+
+To override this bucket across **all** samples, use the optional `OUTPUT_BUCKET_OVERRIDE`:
+
+```yaml
+- uses: magna-labs/miqa-offline-test-kickoff@v1
+  with:
+    ...
+    OUTPUTS_ALREADY_ON_CLOUD: 'true'
+    LOCATIONS: |
+      sample1: run-outputs
+      sample2: run-outputs2/sample2.vcf
+    OUTPUT_BUCKET_OVERRIDE: my-custom-bucket
+```
+
+This will be translated into:
+```json
+{
+  "sample1": { "output_bucket": "my-custom-bucket", "output_folder": "run-outputs" },
+  "sample2": { "output_bucket": "my-custom-bucket", "output_folder": "run-outputs2", "output_file_prefix": "sample2.vcf" }
+}
+```
+
+If you want per-sample output buckets, pass full `gs://` or `s3://` paths directly.
+
+
+---
+
+## 📄 Example 4: Fully Split File Locations in CSV
+
+You can also pass a CSV file that includes `output_folder`, `output_bucket`, and `output_file_prefix` explicitly:
+
+```csv
+name,output_folder,output_bucket,output_file_prefix
+sample1,results/sample1s,my-bucket,sample1.vcf
+sample2,results/sample2s,other-bucket,sample2.bam
+```
+
+Use it like:
+
+```yaml
+- uses: magna-labs/miqa-offline-test-kickoff@v1
+  with:
+    MIQA_API_KEY: ${{ secrets.MIQA_API_KEY }}
+    MIQA_ENDPOINT: yourco.miqa.io
+    TRIGGER_ID: my-trigger-id
+    VERSION_NAME: run-${{ github.sha }}
+    OUTPUTS_ALREADY_ON_CLOUD: 'true'
+    LOCATIONS_FILE: ./split_output_locations.csv
+```
+
+This is especially useful if you want fine-grained control over bucket, folder, and filename separately for each sample.
+
