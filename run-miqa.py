@@ -41,8 +41,6 @@ def load_locations_from_file(path):
                     name = row.get("dataset") or row.get("sample") or row.get("name")
                     if not name:
                         raise ValueError("Missing dataset/sample/name column.")
-
-                    # Full-field format
                     if "output_folder" in row:
                         mapping[name] = {
                             "output_folder": row["output_folder"],
@@ -50,7 +48,6 @@ def load_locations_from_file(path):
                             "output_file_prefix": row.get("output_file_prefix"),
                         }
                         mapping[name] = {k: v for k, v in mapping[name].items() if v}
-                    # Legacy path-based format
                     elif "path" in row:
                         mapping[name] = row["path"]
                     else:
@@ -195,6 +192,7 @@ def main():
             if isinstance(path, str) and os.path.isfile(path):
                 folder = os.path.dirname(path) or "."
                 filename = os.path.basename(path)
+                print(f"Uploading single file {filename} from folder {folder} for dataset {dsid}")
                 upload_to_test_by_dsid(
                     run_id,
                     args.server,
@@ -226,11 +224,15 @@ def main():
         print(f"Latest matching TCR is {latest_tcr_matching_metadata}")
         set_version_overrides({"-1": latest_tcr_matching_metadata}, args.server, run_id, headers)
 
-    print(run_info)
-    
+    print("\n✅ Miqa Test Chain Run Info:")
+    print(json.dumps(run_info, indent=2))
+
     if args.json_output_file:
         with open(args.json_output_file, "w") as f:
-            json.dump(run_info, f)
+            json.dump({
+                "run_id": run_info.get("run_id"),
+                "run_link": run_info.get("link")
+            }, f)
 
 if __name__ == "__main__":
     main()
