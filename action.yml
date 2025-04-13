@@ -5,27 +5,34 @@ inputs:
   MIQA_API_KEY:
     description: 'Miqa API Key'
     required: true
+
   MIQA_ENDPOINT:
     description: 'Root URL for Miqa (proxy or app domain)'
     required: true
+
   TRIGGER_ID:
     description: 'Miqa test trigger ID'
     required: true
+
   VERSION_NAME:
     description: 'Version name for the run'
     required: true
+
   OUTPUTS_ALREADY_ON_CLOUD:
     description: 'Set to true if outputs are already in cloud storage'
     required: false
     default: 'false'
+
   GET_METADATA_KEY:
     description: 'Metadata key to match for fetching latest TCR'
     required: false
     default: ''
+
   GET_METADATA_VALUE:
     description: 'Metadata value to match for fetching latest TCR'
     required: false
     default: ''
+
   SET_METADATA:
     description: |
       Metadata key-values to set on the run.
@@ -35,6 +42,7 @@ inputs:
         pipeline: exome
     required: false
     default: ''
+
   LOCATIONS:
     description: |
       Mapping of sample names to file locations.
@@ -43,9 +51,11 @@ inputs:
         sample1: gs://bucket/sample1.vcf
         sample2: s3://bucket/sample2.vcf
     required: false
+
   OUTPUT_BUCKET_OVERRIDE:
     description: 'Optional bucket name to apply to all samples if only folders are provided in LOCATIONS'
     required: false
+
   LOCATIONS_FILE:
     description: |
       Path to a file mapping dataset/sample names to file locations.
@@ -77,17 +87,18 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: pip install -r "$GITHUB_ACTION_PATH/requirements.txt"
+      run: pip install -r "${{ github.action_path }}/requirements.txt"
 
     - name: Write LOCATIONS to file
       if: ${{ inputs.LOCATIONS != '' }}
       shell: bash
-      run: echo "${{ inputs.LOCATIONS }}" > "$GITHUB_ACTION_PATH/.locations.yaml"
+      run: |
+        echo "${{ inputs.LOCATIONS }}" > .locations.yaml
 
     - name: Run MIQA CLI Script
       shell: bash
       run: |
-        python "$GITHUB_ACTION_PATH/run-miqa.py" \
+        python "${{ github.action_path }}/run-miqa.py" \
           --server "${{ inputs.MIQA_ENDPOINT }}" \
           --api-key "${{ inputs.MIQA_API_KEY }}" \
           --trigger-id "${{ inputs.TRIGGER_ID }}" \
@@ -96,6 +107,6 @@ runs:
           ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
           ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
           ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
-          ${{ inputs.LOCATIONS != '' && '--locations-file \"$GITHUB_ACTION_PATH/.locations.yaml\"' || '' }} \
+          ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }}
