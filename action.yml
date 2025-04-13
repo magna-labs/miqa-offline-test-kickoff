@@ -42,6 +42,9 @@ inputs:
         sample1: gs://bucket/sample1.vcf
         sample2: s3://bucket/sample2.vcf
     required: false
+  OUTPUT_BUCKET_OVERRIDE:
+    description: 'Optional bucket name to apply to all samples if only folders are provided in LOCATIONS'
+    required: false
   LOCATIONS_FILE:
     description: |
       Path to a file mapping dataset/sample names to file locations.
