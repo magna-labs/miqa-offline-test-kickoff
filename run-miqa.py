@@ -74,7 +74,19 @@ def convert_location_for_cloud(location_value):
             scheme, rest = location_value.split("://", 1)
             parts = rest.split("/", 1)
             if len(parts) == 2:
-                return {"output_bucket": parts[0], "output_folder": parts[1]}
+                bucket = parts[0]
+                full_path = parts[1]
+                path_parts = full_path.rsplit("/", 1)
+                if len(path_parts) == 2 and "." in path_parts[1]:
+                    return {
+                        "output_bucket": bucket,
+                        "output_folder": path_parts[0],
+                        "output_file_prefix": path_parts[1]
+                    }
+                return {
+                    "output_bucket": bucket,
+                    "output_folder": full_path
+                }
         return {"output_folder": location_value}
     raise ValueError(f"Unrecognized location format: {location_value}")
 
