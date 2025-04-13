@@ -229,10 +229,7 @@ def main():
 
     if args.json_output_file:
         with open(args.json_output_file, "w") as f:
-            json.dump({
-                "run_id": run_info.get("run_id"),
-                "run_link": run_info.get("link")
-            }, f)
+            json.dump(run_info, f)
 
 if __name__ == "__main__":
     main()
