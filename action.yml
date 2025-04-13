@@ -1,5 +1,6 @@
 name: 'Miqa Offline Test Kickoff'
 description: 'Kick off offline test runs in Miqa, optionally upload outputs, and update metadata or version overrides'
+
 inputs:
   MIQA_API_KEY:
     description: 'Miqa API Key'
@@ -58,13 +59,10 @@ inputs:
               dataset,path
               sample1,gs://bucket/sample1.vcf
 
-        - With headers (legacy):
-              sample,path
-              sample1,gs://bucket/sample1.vcf
-
         - Without headers:
               sample1,gs://bucket/sample1.vcf
     required: false
+
 runs:
   using: "composite"
   steps:
@@ -79,17 +77,17 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: pip install -r ${{ github.action_path }}/requirements.txt
+      run: pip install -r "$GITHUB_ACTION_PATH/requirements.txt"
 
     - name: Write LOCATIONS to file
       if: ${{ inputs.LOCATIONS != '' }}
       shell: bash
-      run: echo "${{ inputs.LOCATIONS }}" > ${{ github.action_path }}/.locations.yaml
+      run: echo "${{ inputs.LOCATIONS }}" > "$GITHUB_ACTION_PATH/.locations.yaml"
 
     - name: Run MIQA CLI Script
       shell: bash
       run: |
-        python ${{ github.action_path }}/run-miqa.py \
+        python "$GITHUB_ACTION_PATH/run-miqa.py" \
           --server "${{ inputs.MIQA_ENDPOINT }}" \
           --api-key "${{ inputs.MIQA_API_KEY }}" \
           --trigger-id "${{ inputs.TRIGGER_ID }}" \
@@ -98,7 +96,6 @@ runs:
           ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
           ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
           ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
-          ${{ inputs.LOCATIONS != '' && '--locations-file \"${{ github.action_path }}/.locations.yaml\"' || '' }} \
+          ${{ inputs.LOCATIONS != '' && '--locations-file \"$GITHUB_ACTION_PATH/.locations.yaml\"' || '' }} \
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }}
-
