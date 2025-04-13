@@ -141,6 +141,7 @@ def main():
     parser.add_argument("--locations", type=str, required=False)
     parser.add_argument("--locations-file", type=str, required=False)
     parser.add_argument("--output-bucket-override", type=str, required=False)
+    parser.add_argument("--json-output-file", type=str, required=False, help="Optional path to write JSON summary")
 
     args = parser.parse_args()
     headers = {"content-type": "application/json", "app-key": args.api_key}
@@ -224,6 +225,12 @@ def main():
         )
         print(f"Latest matching TCR is {latest_tcr_matching_metadata}")
         set_version_overrides({"-1": latest_tcr_matching_metadata}, args.server, run_id, headers)
+
+    print(run_info)
+    
+    if args.json_output_file:
+        with open(args.json_output_file, "w") as f:
+            json.dump(run_info, f)
 
 if __name__ == "__main__":
     main()
