@@ -94,7 +94,7 @@ runs:
       id: run_miqa
       shell: bash
       run: |
-        result=$(python "${{ github.action_path }}/run-miqa.py" \
+        python "${{ github.action_path }}/run-miqa.py" \
           --server "${{ inputs.MIQA_ENDPOINT }}" \
           --api-key "${{ inputs.MIQA_API_KEY }}" \
           --trigger-id "${{ inputs.TRIGGER_ID }}" \
@@ -106,15 +106,15 @@ runs:
           ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
-        )
-        echo "$result" | jq
-        echo "run_id=$(echo $result | jq -r .run_id)" >> $GITHUB_OUTPUT
-        echo "run_link=$(echo $result | jq -r .link)" >> $GITHUB_OUTPUT
-    - name: Print Summary
+          --json-output-file .miqa_output.json
+
+        echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
+        echo "run_link=$(jq -r .run_link < .miqa_output.json)" >> $GITHUB_OUTPUT
+
+    - name: Print Miqa Test Run Summary
       shell: bash
       run: |
         echo ""
-        echo "✅ Miqa Test Run Ready!"
+        echo "✅ Miqa Test Run is ready!"
         echo "🧪 Run ID: ${{ steps.run_miqa.outputs.run_id }}"
         echo "🔗 View results: ${{ steps.run_miqa.outputs.run_link }}"
-        echo ""
