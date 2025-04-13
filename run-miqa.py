@@ -187,19 +187,33 @@ def main():
         not args.outputs_already_on_cloud,
         locations_lookup_by_sid,
     )
-    print(run_info)
     run_id = run_info.get("run_id")
 
     if not args.outputs_already_on_cloud:
-        upload_to_test_by_dsid(
-            run_id,
-            args.server,
-            locations_lookup_by_sid,
-            filepatterns=None,
-            quiet=False,
-            api_key=args.api_key,
-            detailed_file_logs=True,
-        )
+        for dsid, path in locations_lookup_by_sid.items():
+            if isinstance(path, str) and os.path.isfile(path):
+                folder = os.path.dirname(path) or "."
+                filename = os.path.basename(path)
+                upload_to_test_by_dsid(
+                    run_id,
+                    args.server,
+                    {dsid: folder},
+                    filepatterns=None,
+                    filepattern_end=filename,
+                    quiet=False,
+                    api_key=args.api_key,
+                    detailed_file_logs=True,
+                )
+            else:
+                upload_to_test_by_dsid(
+                    run_id,
+                    args.server,
+                    {dsid: path},
+                    filepatterns=None,
+                    quiet=False,
+                    api_key=args.api_key,
+                    detailed_file_logs=True,
+                )
 
     if set_metadata_dict:
         update_metadata(set_metadata_dict, args.server, run_id, headers)
