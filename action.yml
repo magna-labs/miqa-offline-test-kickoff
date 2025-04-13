@@ -109,7 +109,7 @@ runs:
           --json-output-file .miqa_output.json
 
         echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
-        echo "run_link=$(jq -r .run_link < .miqa_output.json)" >> $GITHUB_OUTPUT
+        echo "run_link=$(jq -r .link < .miqa_output.json)" >> $GITHUB_OUTPUT
 
     - name: Print Miqa Test Run Summary
       shell: bash
