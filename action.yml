@@ -68,23 +68,32 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-python@v4
+    - name: Setup Python
+      uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    - run: python -m pip install --upgrade pip
-    - run: pip install -r ${{ github.action_path }}/requirements.txt
+
+    - name: Upgrade pip
+      shell: bash
+      run: python -m pip install --upgrade pip
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install -r ${{ github.action_path }}/requirements.txt
+
     - name: Run MIQA CLI Script
       shell: bash
-  run: |
-    python ${{ github.action_path }}/run-miqa.py \
-      --server "${{ inputs.MIQA_ENDPOINT }}" \
-      --api-key "${{ inputs.MIQA_API_KEY }}" \
-      --trigger-id "${{ inputs.TRIGGER_ID }}" \
-      --version-name "${{ inputs.VERSION_NAME }}" \
-      ${{ inputs.OUTPUTS_ALREADY_ON_CLOUD == 'true' && '--outputs-already-on-cloud' || '' }} \
-      ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
-      ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
-      ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
-      ${{ inputs.LOCATIONS && format('--locations \"{0}\"', inputs.LOCATIONS) || '' }} \
-      ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
-      ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }}
+      run: |
+        python ${{ github.action_path }}/run-miqa.py \
+          --server "${{ inputs.MIQA_ENDPOINT }}" \
+          --api-key "${{ inputs.MIQA_API_KEY }}" \
+          --trigger-id "${{ inputs.TRIGGER_ID }}" \
+          --version-name "${{ inputs.VERSION_NAME }}" \
+          ${{ inputs.OUTPUTS_ALREADY_ON_CLOUD == 'true' && '--outputs-already-on-cloud' || '' }} \
+          ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
+          ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
+          ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
+          ${{ inputs.LOCATIONS && format('--locations \"{0}\"', inputs.LOCATIONS) || '' }} \
+          ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
+          ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }}
+
