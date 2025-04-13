@@ -98,7 +98,7 @@ runs:
           ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
           ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
           ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
-          ${{ inputs.LOCATIONS != '' && format('--locations-file \"{0}\"', github.action_path + '/.locations.yaml') || '' }} \
+          ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }}
 
