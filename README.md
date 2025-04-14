@@ -15,7 +15,6 @@ Key inputs include:
 - `VERSION_NAME`
 - `LOCATIONS` or `LOCATIONS_FILE`
 - `OUTPUTS_ALREADY_ON_CLOUD` (true/false)
-- `SET_METADATA` (optional key-values)
 
 ---
 
@@ -32,9 +31,6 @@ Key inputs include:
     LOCATIONS: |
       sample1: gs://bucket123/run1/sample1.vcf
       sample2: s3://other-bucket/path/to/sample2.vcf
-    SET_METADATA: |
-      run_by: ${{ github.actor }}
-      commit: ${{ github.sha }}
 ```
 
 ---
