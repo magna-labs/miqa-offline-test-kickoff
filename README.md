@@ -4,7 +4,7 @@ This GitHub Action triggers an **offline test run in Miqa**, optionally uploads 
 
 ---
 
-## 📦 Inputs
+## Inputs
 
 See [`action.yml`](./action.yml) for the full list of inputs.
 
