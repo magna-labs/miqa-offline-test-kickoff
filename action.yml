@@ -144,6 +144,17 @@ runs:
         customHeaders: '{"Content-Type": "application/json"}'
         data: '{"installation_id":"${{ inputs.INSTALLATION_ID }}","repository_full_name":"${{ inputs.REPOSITORY }}", "head_sha":"${{ env.NEW_SHA  }}", "check_name":"${{inputs.CHECK_NAME}}", "gha_version":"1.1.5"}'
 
+    - name: Suggest GitHub App installation if check run fails
+      if: ${{ failure() && inputs.INSTALLATION_ID != '' }}
+      shell: bash
+      run: |
+        echo "❌ Failed to create GitHub check run."
+        echo "🔍 Most common cause: The Miqa GitHub App is not installed on the repository:"
+        echo "    ${{ inputs.REPOSITORY }}"
+        echo ""
+        echo "💡 To fix: Visit your GitHub App settings and install the app on this repo with 'checks: write' permission."
+        echo "🔗 https://github.com/apps/YOUR-MIQA-APP-NAME/installations"
+
     - name: Set CHECK_RUN_ID
       if: ${{ inputs.INSTALLATION_ID != '' }}
       shell: bash
@@ -166,7 +177,7 @@ runs:
           ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
-          ${{ env.CHECK_RUN_ID && format('--event-id \"{0}\"', env.CHECK_RUN_ID) || '' }} \
+          ${{ env.CHECK_RUN_ID && format('--event-id {0}', env.CHECK_RUN_ID) || '' }} \
           --json-output-file .miqa_output.json --app-name gh
 
         echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
