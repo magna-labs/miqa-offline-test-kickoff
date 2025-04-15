@@ -14,11 +14,13 @@ from miqatools.remoteexecution.triggertestandupload_python import (
 
 
 def normalize_miqa_endpoint(endpoint):
-    if not endpoint.startswith("https://"):
-        endpoint = "https://" + endpoint
-    if not endpoint.endswith("/api"):
-        endpoint = endpoint.rstrip("/") + "/api"
-    return endpoint
+    # Remove scheme if present
+    endpoint = endpoint.replace("https://", "").replace("http://", "")
+    # Remove trailing `/api` if present
+    if endpoint.endswith("/api"):
+        endpoint = endpoint[:-4]
+    # Remove trailing slash if present
+    return endpoint.rstrip("/")
 
 
 def interpolate_env_variables(raw_string):
