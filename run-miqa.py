@@ -103,7 +103,7 @@ def convert_location_for_cloud(location_value):
 
 
 def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None):
-    url = f"{miqa_server}/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}?app=mn&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
+    url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}?app=mn&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
     body = ds_id_overrides if not local else {}
     print(f"Triggering offline test with body: {json.dumps(body, indent=2)}")
     response = requests.post(url, json=body, headers=headers)
@@ -115,7 +115,7 @@ def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name,
 
 
 def update_metadata(metadata, miqa_server, run_id, headers):
-    update_metadata_url = f"{miqa_server}/test_chain_run/{run_id}/set_trigger_info"
+    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
     response = requests.post(update_metadata_url, json=metadata, headers=headers)
     if response.ok:
         return response.json()
@@ -125,7 +125,7 @@ def update_metadata(metadata, miqa_server, run_id, headers):
 
 
 def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key, metadata_value):
-    url = f"{miqa_server}/test_chain_run/{run_id}/get_latest_for_metadata?metadata_key={metadata_key}&metadata_value={metadata_value}"
+    url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_latest_for_metadata?metadata_key={metadata_key}&metadata_value={metadata_value}"
     response = requests.get(url, headers=headers)
     if response.ok:
         return response.json().get("tcr_id")
@@ -135,7 +135,7 @@ def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key,
 
 
 def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
-    update_metadata_url = f"{miqa_server}/test_chain_run/{run_id}/set_version_overrides"
+    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_version_overrides"
     response = requests.post(update_metadata_url, json=overrides_lookup, headers=headers)
     if response.ok:
         return response.json()
