@@ -12,16 +12,11 @@ from miqatools.remoteexecution.triggertestandupload_python import (
     upload_to_test_by_dsid,
 )
 
-
 def normalize_miqa_endpoint(endpoint):
-    # Remove scheme if present
     endpoint = endpoint.replace("https://", "").replace("http://", "")
-    # Remove trailing `/api` if present
     if endpoint.endswith("/api"):
         endpoint = endpoint[:-4]
-    # Remove trailing slash if present
     return endpoint.rstrip("/")
-
 
 def interpolate_env_variables(raw_string):
     pattern = re.compile(r'\$\{\{\s*([\w\.]+)\s*\}\}|\$\{([\w\.]+)\}')
@@ -30,13 +25,11 @@ def interpolate_env_variables(raw_string):
         return os.environ.get(var_name, match.group(0))
     return pattern.sub(replace_var, raw_string)
 
-
 def parse_yaml_or_json(string_input):
     try:
         return json.loads(string_input)
     except json.JSONDecodeError:
         return yaml.safe_load(string_input)
-
 
 def load_locations_from_file(path):
     if path.endswith(".yaml") or path.endswith(".yml"):
@@ -76,7 +69,6 @@ def load_locations_from_file(path):
     else:
         raise ValueError(f"Unsupported file format: {path}")
 
-
 def convert_location_for_cloud(location_value):
     if isinstance(location_value, dict):
         return location_value
@@ -101,9 +93,13 @@ def convert_location_for_cloud(location_value):
         return {"output_folder": location_value}
     raise ValueError(f"Unrecognized location format: {location_value}")
 
+def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None, event_id=None, app_name="mn"):
+    url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
+    query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
+    if event_id:
+        query += f"&event_id={event_id}"
+    url += query
 
-def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None):
-    url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}?app=mn&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
     body = ds_id_overrides if not local else {}
     print(f"Triggering offline test with body: {json.dumps(body, indent=2)}")
     response = requests.post(url, json=body, headers=headers)
@@ -112,7 +108,6 @@ def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name,
     else:
         print(f"Error: {response.text}")
         raise Exception(f"Failed to kick off the run at url '{url}'")
-
 
 def update_metadata(metadata, miqa_server, run_id, headers):
     update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
@@ -123,7 +118,6 @@ def update_metadata(metadata, miqa_server, run_id, headers):
         print(f"Error: {response.text}")
         raise Exception(f"Failed to update metadata for {run_id}")
 
-
 def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key, metadata_value):
     url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_latest_for_metadata?metadata_key={metadata_key}&metadata_value={metadata_value}"
     response = requests.get(url, headers=headers)
@@ -133,7 +127,6 @@ def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key,
         print(f"Error: {response.text}", file=sys.stderr)
         sys.exit(1)
 
-
 def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
     update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_version_overrides"
     response = requests.post(update_metadata_url, json=overrides_lookup, headers=headers)
@@ -142,7 +135,6 @@ def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
     else:
         print(f"Error: {response.text}", file=sys.stderr)
         sys.exit(1)
-
 
 def main():
     parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.")
@@ -158,10 +150,11 @@ def main():
     parser.add_argument("--locations-file", type=str, required=False)
     parser.add_argument("--output-bucket-override", type=str, required=False)
     parser.add_argument("--json-output-file", type=str, required=False, help="Optional path to write JSON summary")
+    parser.add_argument("--event-id", type=str, required=False, help="Optional GitHub Check Run ID (for status reporting)")
+    parser.add_argument("--app-name", type=str, required=False, default="mn", help="App name to include in the trigger call (e.g. 'mn' or 'gh')")
 
     args = parser.parse_args()
     headers = {"content-type": "application/json", "app-key": args.api_key}
-
     miqa_server = normalize_miqa_endpoint(args.server)
 
     if not args.locations and not args.locations_file:
@@ -205,6 +198,8 @@ def main():
         headers,
         not args.outputs_already_on_cloud,
         locations_lookup_by_sid,
+        event_id=args.event_id,
+        app_name=args.app_name,
     )
     run_id = run_info.get("run_id")
 
@@ -251,7 +246,6 @@ def main():
     if args.json_output_file:
         with open(args.json_output_file, "w") as f:
             json.dump(run_info, f)
-
 
 if __name__ == "__main__":
     main()
