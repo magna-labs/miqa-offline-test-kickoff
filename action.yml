@@ -1,5 +1,5 @@
 name: 'Miqa Offline Test Kickoff'
-description: 'Kick off offline test runs in Miqa, optionally upload outputs, and update metadata or version overrides'
+description: 'Kick off offline test runs in Miqa, optionally upload outputs, and update metadata or version overrides. Optionally create GitHub status checks.'
 
 inputs:
   MIQA_API_KEY:
@@ -62,6 +62,23 @@ inputs:
         - Without headers:
               sample1,gs://bucket/sample1.vcf
     required: false
+  INSTALLATION_ID:
+    description: 'App Installation ID for the miqa-status-check GitHub App (optional)'
+    required: false
+  CHECK_NAME:
+    description: 'Name to display in checks status'
+    required: false
+    default: 'Triggered Miqa Offline Test'
+  SHA:
+    description: 'Commit SHA (e.g., github.sha)'
+    required: false
+  REPOSITORY:
+    description: 'GitHub repository (e.g., github.repository)'
+    required: false
+  MIQA_GITHUB_APP:
+    description: 'Base URL for Miqa GitHub App'
+    required: false
+    default: 'https://miqa-github.herokuapp.com'
 
 outputs:
   run_id:
@@ -90,6 +107,49 @@ runs:
       shell: bash
       run: echo "${{ inputs.LOCATIONS }}" > .locations.yaml
 
+    - name: Fetch commit SHA
+      id: fetch_sha
+      if: ${{ inputs.INSTALLATION_ID != '' }}
+      uses: octokit/request-action@v2.x
+      with:
+        route: GET /repos/{repo}/commits/{sha}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        INPUT_REPO: ${{ inputs.REPOSITORY }}
+        INPUT_SHA: ${{ inputs.SHA }}
+
+    - name: Save commit SHA
+      if: ${{ inputs.INSTALLATION_ID != '' }}
+      id: get_sha
+      shell: bash
+      run: |
+        echo "parent_sha=${{ toJSON(fromJSON(steps.fetch_sha.outputs.data).parents[1].sha) }}" >> "$GITHUB_OUTPUT"
+
+    - if: ${{ inputs.INSTALLATION_ID != '' && github.event_name == 'pull_request' && steps.get_sha.outputs.parent_sha != 'null' }}
+      shell: bash
+      run: echo "NEW_SHA=${{ steps.get_sha.outputs.parent_sha }}" >> $GITHUB_ENV
+
+    - if: ${{ inputs.INSTALLATION_ID != '' && (github.event_name != 'pull_request' || steps.get_sha.outputs.parent_sha == 'null') }}
+      shell: bash
+      run: echo "NEW_SHA=${{ inputs.SHA }}" >> $GITHUB_ENV
+
+    - name: Create GitHub Check Run
+      if: ${{ inputs.INSTALLATION_ID != '' }}
+      id: create_check
+      uses: fjogeleit/http-request-action@v1.14.0
+      with:
+        url: '${{ inputs.MIQA_GITHUB_APP }}/create_check_manual'
+        method: 'POST'
+        timeout: 30000
+        customHeaders: '{"Content-Type": "application/json"}'
+        data: '{"installation_id":"${{ inputs.INSTALLATION_ID }}","repository_full_name":"${{ inputs.REPOSITORY }}", "head_sha":"${{ env.NEW_SHA  }}", "check_name":"${{inputs.CHECK_NAME}}", "gha_version":"1.1.5"}'
+
+    - name: Set CHECK_RUN_ID
+      if: ${{ inputs.INSTALLATION_ID != '' }}
+      shell: bash
+      run: |
+        echo "CHECK_RUN_ID=${{ fromJSON(fromJSON(toJSON(steps.create_check.outputs.response))).id }}" >> $GITHUB_ENV
+
     - name: Run MIQA CLI Script
       id: run_miqa
       shell: bash
@@ -106,6 +166,7 @@ runs:
           ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
+          ${{ env.CHECK_RUN_ID && format('--event-id \"{0}\"', env.CHECK_RUN_ID) || '' }} \
           --json-output-file .miqa_output.json
 
         echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
