@@ -21,7 +21,7 @@ Key inputs include:
 ## ☁️ Example 1: Cloud-Stored Outputs (GCS/S3)
 
 ```yaml
-- uses: magna-labs/miqa-offline-test-kickoff@v1
+- uses: magna-labs/miqa-offline-test-kickoff@v1.0
   with:
     MIQA_API_KEY: ${{ secrets.MIQA_API_KEY }}
     MIQA_ENDPOINT: yourco.miqa.io
@@ -38,7 +38,7 @@ Key inputs include:
 ## 💻 Example 2: Local Outputs (to be uploaded)
 
 ```yaml
-- uses: magna-labs/miqa-offline-test-kickoff@v1
+- uses: magna-labs/miqa-offline-test-kickoff@v1.0
   with:
     MIQA_API_KEY: ${{ secrets.MIQA_API_KEY }}
     MIQA_ENDPOINT: yourco.miqa.io
@@ -55,7 +55,7 @@ Key inputs include:
 ## 📄 Example 3: Using a CSV/YAML/JSON File for Sample Mapping
 
 ```yaml
-- uses: magna-labs/miqa-offline-test-kickoff@v1
+- uses: magna-labs/miqa-offline-test-kickoff@v1.0
   with:
     MIQA_API_KEY: ${{ secrets.MIQA_API_KEY }}
     MIQA_ENDPOINT: yourco.miqa.io
@@ -115,7 +115,7 @@ If you are using `OUTPUTS_ALREADY_ON_CLOUD: true` and pass values in `LOCATIONS`
 To override this bucket across **all** samples, use the optional `OUTPUT_BUCKET_OVERRIDE`:
 
 ```yaml
-- uses: magna-labs/miqa-offline-test-kickoff@v1
+- uses: magna-labs/miqa-offline-test-kickoff@v1.0
   with:
     ...
     OUTPUTS_ALREADY_ON_CLOUD: 'true'
