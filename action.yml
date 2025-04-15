@@ -167,7 +167,7 @@ runs:
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
           ${{ env.CHECK_RUN_ID && format('--event-id \"{0}\"', env.CHECK_RUN_ID) || '' }} \
-          --json-output-file .miqa_output.json
+          --json-output-file .miqa_output.json --app-name gh
 
         echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
         echo "run_link=$(jq -r .link < .miqa_output.json)" >> $GITHUB_OUTPUT
