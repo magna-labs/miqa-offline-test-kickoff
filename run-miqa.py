@@ -12,6 +12,15 @@ from miqatools.remoteexecution.triggertestandupload_python import (
     upload_to_test_by_dsid,
 )
 
+
+def normalize_miqa_endpoint(endpoint):
+    if not endpoint.startswith("https://"):
+        endpoint = "https://" + endpoint
+    if not endpoint.endswith("/api"):
+        endpoint = endpoint.rstrip("/") + "/api"
+    return endpoint
+
+
 def interpolate_env_variables(raw_string):
     pattern = re.compile(r'\$\{\{\s*([\w\.]+)\s*\}\}|\$\{([\w\.]+)\}')
     def replace_var(match):
@@ -19,11 +28,13 @@ def interpolate_env_variables(raw_string):
         return os.environ.get(var_name, match.group(0))
     return pattern.sub(replace_var, raw_string)
 
+
 def parse_yaml_or_json(string_input):
     try:
         return json.loads(string_input)
     except json.JSONDecodeError:
         return yaml.safe_load(string_input)
+
 
 def load_locations_from_file(path):
     if path.endswith(".yaml") or path.endswith(".yml"):
@@ -63,6 +74,7 @@ def load_locations_from_file(path):
     else:
         raise ValueError(f"Unsupported file format: {path}")
 
+
 def convert_location_for_cloud(location_value):
     if isinstance(location_value, dict):
         return location_value
@@ -87,8 +99,9 @@ def convert_location_for_cloud(location_value):
         return {"output_folder": location_value}
     raise ValueError(f"Unrecognized location format: {location_value}")
 
+
 def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None):
-    url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}?app=mn&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
+    url = f"{miqa_server}/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}?app=mn&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
     body = ds_id_overrides if not local else {}
     print(f"Triggering offline test with body: {json.dumps(body, indent=2)}")
     response = requests.post(url, json=body, headers=headers)
@@ -98,8 +111,9 @@ def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name,
         print(f"Error: {response.text}")
         raise Exception(f"Failed to kick off the run at url '{url}'")
 
+
 def update_metadata(metadata, miqa_server, run_id, headers):
-    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
+    update_metadata_url = f"{miqa_server}/test_chain_run/{run_id}/set_trigger_info"
     response = requests.post(update_metadata_url, json=metadata, headers=headers)
     if response.ok:
         return response.json()
@@ -107,8 +121,9 @@ def update_metadata(metadata, miqa_server, run_id, headers):
         print(f"Error: {response.text}")
         raise Exception(f"Failed to update metadata for {run_id}")
 
+
 def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key, metadata_value):
-    url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_latest_for_metadata?metadata_key={metadata_key}&metadata_value={metadata_value}"
+    url = f"{miqa_server}/test_chain_run/{run_id}/get_latest_for_metadata?metadata_key={metadata_key}&metadata_value={metadata_value}"
     response = requests.get(url, headers=headers)
     if response.ok:
         return response.json().get("tcr_id")
@@ -116,14 +131,16 @@ def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key,
         print(f"Error: {response.text}", file=sys.stderr)
         sys.exit(1)
 
+
 def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
-    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_version_overrides"
+    update_metadata_url = f"{miqa_server}/test_chain_run/{run_id}/set_version_overrides"
     response = requests.post(update_metadata_url, json=overrides_lookup, headers=headers)
     if response.ok:
         return response.json()
     else:
         print(f"Error: {response.text}", file=sys.stderr)
         sys.exit(1)
+
 
 def main():
     parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.")
@@ -143,6 +160,8 @@ def main():
     args = parser.parse_args()
     headers = {"content-type": "application/json", "app-key": args.api_key}
 
+    miqa_server = normalize_miqa_endpoint(args.server)
+
     if not args.locations and not args.locations_file:
         raise Exception("You must provide either --locations or --locations-file.")
     if args.locations and args.locations_file:
@@ -159,7 +178,7 @@ def main():
     set_metadata_raw = interpolate_env_variables(args.set_metadata or "")
     set_metadata_dict = parse_yaml_or_json(set_metadata_raw) if args.set_metadata else None
 
-    response = get_trigger_info(args.server, args.trigger_id)
+    response = get_trigger_info(miqa_server, args.trigger_id)
     if not isinstance(response, dict):
         raise Exception("Failed to retrieve dataset ID mapping.")
     ds_id_mapping = response.get("ds_id_mapping", {}).get("results", {}).get("data", {})
@@ -178,7 +197,7 @@ def main():
             locations_lookup_by_sid[sid] = location_value
 
     run_info = trigger_offline_test_and_get_run_info(
-        args.server,
+        miqa_server,
         args.trigger_id,
         args.version_name,
         headers,
@@ -195,7 +214,7 @@ def main():
                 print(f"Uploading single file {filename} from folder {folder} for dataset {dsid}")
                 upload_to_test_by_dsid(
                     run_id,
-                    args.server,
+                    miqa_server,
                     {dsid: folder},
                     filepatterns=None,
                     filepattern_end=filename,
@@ -206,7 +225,7 @@ def main():
             else:
                 upload_to_test_by_dsid(
                     run_id,
-                    args.server,
+                    miqa_server,
                     {dsid: path},
                     filepatterns=None,
                     quiet=False,
@@ -215,14 +234,14 @@ def main():
                 )
 
     if set_metadata_dict:
-        update_metadata(set_metadata_dict, args.server, run_id, headers)
+        update_metadata(set_metadata_dict, miqa_server, run_id, headers)
 
     if args.get_metadata_key:
         latest_tcr_matching_metadata = get_latest_tcr_matching_metadata(
-            args.server, headers, run_id, args.get_metadata_key, args.get_metadata_value
+            miqa_server, headers, run_id, args.get_metadata_key, args.get_metadata_value
         )
         print(f"Latest matching TCR is {latest_tcr_matching_metadata}")
-        set_version_overrides({"-1": latest_tcr_matching_metadata}, args.server, run_id, headers)
+        set_version_overrides({"-1": latest_tcr_matching_metadata}, miqa_server, run_id, headers)
 
     print("\n✅ Miqa Test Chain Run Info:")
     print(json.dumps(run_info, indent=2))
@@ -230,6 +249,7 @@ def main():
     if args.json_output_file:
         with open(args.json_output_file, "w") as f:
             json.dump(run_info, f)
+
 
 if __name__ == "__main__":
     main()
