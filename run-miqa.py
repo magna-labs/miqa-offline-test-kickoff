@@ -161,9 +161,15 @@ def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seco
     print(f"⏳ Reached max attempts ({max_checks}) without completion.")
     return False
 
+import os
+
 def download_report(run_id, report_type, output_folder, miqa_server, headers):
     report_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/{report_type}"
     report_path = os.path.join(output_folder, f"Miqa_Test_Report_{run_id}.{report_type}")
+
+    # ✅ Ensure the folder exists
+    os.makedirs(output_folder, exist_ok=True)
+
     response = requests.get(report_url, headers=headers)
     if response.ok:
         with open(report_path, "wb") as f:
