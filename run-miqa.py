@@ -225,10 +225,12 @@ def main():
         raise Exception("Failed to retrieve dataset ID mapping.")
     ds_id_mapping = response.get("ds_id_mapping", {}).get("results", {}).get("data", {})
 
+    passed_names_not_in_mapping = False
     locations_lookup_by_sid = {}
     for sample_name, location_value in locations_lookup_by_samplename.items():
         sid = ds_id_mapping.get(sample_name)
         if not sid:
+            passed_names_not_in_mapping = True
             continue
 
         if not args.outputs_already_on_cloud and isinstance(location_value, str) and not os.path.exists(location_value):
@@ -240,7 +242,7 @@ def main():
                 parsed["output_bucket"] = args.output_bucket_override
             locations_lookup_by_sid[sid] = parsed
         else:
-            locations_lookup_by_sid[sid] = location_value
+            locations_lookup_by_sid[sid] = location_value            
 
     run_info = trigger_offline_test_and_get_run_info(
         miqa_server,
@@ -304,6 +306,29 @@ def main():
 
     print("\n✅ Miqa Test Chain Run Info:")
     print(json.dumps(run_info, indent=2))
+    
+    # Warn if no valid samples matched
+    if len(locations_lookup_by_sid) == 0 and passed_names_not_in_mapping:
+        print(
+            "⚠️ None of the sample names you provided match this test trigger.\n"
+            "   Please check your sample names.\n"
+            f"   Available sample names: {', '.join(ds_id_mapping.keys())}"
+        )
+        
+    expected_sample_count = len(ds_id_mapping)
+    provided_sample_count = len(locations_lookup_by_sid)
+    
+    if provided_sample_count == 0:
+        print("⚠️ No files were uploaded for this run.")
+    elif provided_sample_count < expected_sample_count:
+        print(
+            f"⚠️ Only {provided_sample_count} of {expected_sample_count} expected samples were uploaded."
+        )
+    
+    grid_upload_url = run_info.get("details", {}).get("links", {}).get("grid_upload")
+    if grid_upload_url:
+        print("📥 You can manually upload missing files here:")
+        print(f"   {grid_upload_url}")
 
     if args.json_output_file:
         with open(args.json_output_file, "w") as f:
