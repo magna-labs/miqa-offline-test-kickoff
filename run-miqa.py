@@ -6,6 +6,7 @@ import yaml
 import os
 import re
 import csv
+import time
 from miqatools.remoteexecution.triggertest_helpers import get_trigger_info
 from miqatools.remoteexecution.triggertestandupload_python import (
     trigger_test_and_upload_by_dsid,
@@ -136,6 +137,41 @@ def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
         print(f"Error: {response.text}", file=sys.stderr)
         sys.exit(1)
 
+def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seconds):
+    status_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_status"
+    for attempt in range(1, max_checks + 1):
+        response = requests.get(status_url, headers=headers)
+        try:
+            json_res = response.json()
+        except Exception as e:
+            print(f"⚠️ Failed to parse response on attempt {attempt}: {e}")
+            continue
+
+        print(f"[Attempt {attempt}] Status:")
+        print(json.dumps(json_res, indent=2))
+
+        status = json_res.get("data", {}).get("status")
+        if status == "done":
+            print(f"✅ Miqa run {run_id} completed.")
+            print(f"📊 Outcome: {json_res.get('data', {}).get('outcome')}")
+            print(f"🔗 Link: {json_res.get('data', {}).get('link')}")
+            return True
+        if attempt < max_checks:
+            time.sleep(frequency_seconds)
+    print(f"⏳ Reached max attempts ({max_checks}) without completion.")
+    return False
+
+def download_report(run_id, report_type, output_folder, miqa_server, headers):
+    report_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/{report_type}"
+    report_path = os.path.join(output_folder, f"Miqa_Test_Report_{run_id}.{report_type}")
+    response = requests.get(report_url, headers=headers)
+    if response.ok:
+        with open(report_path, "wb") as f:
+            f.write(response.content)
+        print(f"📥 Report saved to {report_path}")
+    else:
+        print(f"❌ Failed to download {report_type.upper()} report from {report_url}. Status: {response.status_code}")
+
 def main():
     parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.")
     parser.add_argument("--server", type=str, required=True)
@@ -152,6 +188,11 @@ def main():
     parser.add_argument("--json-output-file", type=str, required=False, help="Optional path to write JSON summary")
     parser.add_argument("--app-name", type=str, required=False, default="mn", help="App name to include in the trigger call (e.g. 'mn' or 'gh')")
     parser.add_argument("--additional-query-params", type=str, required=False, default="", help="Extra query string (e.g. '&repo=foo&commit=sha')")
+    parser.add_argument("--wait-for-completion", action="store_true", help="Poll Miqa until the test run is complete")
+    parser.add_argument("--poll-frequency", type=int, default=60, help="Seconds between poll attempts")
+    parser.add_argument("--poll-max-attempts", type=int, default=20, help="Maximum polling attempts")
+    parser.add_argument("--download-report", type=str, help="Type of report to download after completion (e.g. 'pdf')")
+    parser.add_argument("--report-folder", type=str, default=".", help="Where to save downloaded report")
 
     args = parser.parse_args()
     headers = {"content-type": "application/json", "app-key": args.api_key}
@@ -183,8 +224,7 @@ def main():
         sid = ds_id_mapping.get(sample_name)
         if not sid:
             continue
-    
-        # Warn if file or folder does not exist
+
         if not args.outputs_already_on_cloud and isinstance(location_value, str) and not os.path.exists(location_value):
             print(f"⚠️ Path does not exist for sample '{sample_name}': {location_value}")
 
@@ -244,6 +284,13 @@ def main():
         )
         print(f"Latest matching TCR is {latest_tcr_matching_metadata}")
         set_version_overrides({"-1": latest_tcr_matching_metadata}, miqa_server, run_id, headers)
+
+    if args.wait_for_completion:
+        print("⏳ Polling for completion...")
+        poll_for_completion(run_id, miqa_server, headers, args.poll_max_attempts, args.poll_frequency)
+
+    if args.download_report:
+        download_report(run_id, args.download_report, args.report_folder, miqa_server, headers)
 
     print("\n✅ Miqa Test Chain Run Info:")
     print(json.dumps(run_info, indent=2))
