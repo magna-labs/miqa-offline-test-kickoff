@@ -191,8 +191,8 @@ def main():
     parser.add_argument("--wait-for-completion", action="store_true", help="Poll Miqa until the test run is complete")
     parser.add_argument("--poll-frequency", type=int, default=60, help="Seconds between poll attempts")
     parser.add_argument("--poll-max-attempts", type=int, default=20, help="Maximum polling attempts")
-    parser.add_argument("--download-report", type=str, help="Type of report to download after completion (e.g. 'pdf')")
-    parser.add_argument("--report-folder", type=str, default=".", help="Where to save downloaded report")
+    parser.add_argument("--download-reports", type=str, nargs="+", help="One or more report types to download after successful completion (e.g. 'pdf', 'json')")
+    parser.add_argument("--report-folder", type=str, default=".", help="Where to save downloaded reports")
 
     args = parser.parse_args()
     headers = {"content-type": "application/json", "app-key": args.api_key}
@@ -285,12 +285,16 @@ def main():
         print(f"Latest matching TCR is {latest_tcr_matching_metadata}")
         set_version_overrides({"-1": latest_tcr_matching_metadata}, miqa_server, run_id, headers)
 
+    poll_successful = True
     if args.wait_for_completion:
         print("⏳ Polling for completion...")
-        poll_for_completion(run_id, miqa_server, headers, args.poll_max_attempts, args.poll_frequency)
+        poll_successful = poll_for_completion(run_id, miqa_server, headers, args.poll_max_attempts, args.poll_frequency)
 
-    if args.download_report:
-        download_report(run_id, args.download_report, args.report_folder, miqa_server, headers)
+    if poll_successful and args.download_reports:
+        for report_type in args.download_reports:
+            download_report(run_id, report_type, args.report_folder, miqa_server, headers)
+    elif args.download_reports and not poll_successful:
+        print("⚠️ Skipping report download because test did not complete successfully.")
 
     print("\n✅ Miqa Test Chain Run Info:")
     print(json.dumps(run_info, indent=2))
