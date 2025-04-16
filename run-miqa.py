@@ -183,6 +183,11 @@ def main():
         sid = ds_id_mapping.get(sample_name)
         if not sid:
             continue
+    
+        # Warn if file or folder does not exist
+        if not args.outputs_already_on_cloud and isinstance(location_value, str) and not os.path.exists(location_value):
+            print(f"⚠️ Path does not exist for sample '{sample_name}': {location_value}")
+
         if args.outputs_already_on_cloud:
             parsed = convert_location_for_cloud(location_value)
             if args.output_bucket_override and isinstance(parsed, dict) and "output_bucket" not in parsed:
