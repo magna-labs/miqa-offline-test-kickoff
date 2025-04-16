@@ -165,6 +165,7 @@ runs:
       id: run_miqa
       shell: bash
       run: |
+        ADDITIONAL_QUERY="&repo=${{ inputs.REPOSITORY }}&commit=${{ inputs.SHA }}&event_id=${{ env.CHECK_RUN_ID }}&gha_version=miqa-offline-test-kickoff_v1.3${{ inputs.ADDITIONAL_INSTRUCTIONS }}" 
         python "${{ github.action_path }}/run-miqa.py" \
           --server "${{ inputs.MIQA_ENDPOINT }}" \
           --api-key "${{ inputs.MIQA_API_KEY }}" \
@@ -178,10 +179,20 @@ runs:
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
           ${{ env.CHECK_RUN_ID && format('--event-id {0}', env.CHECK_RUN_ID) || '' }} \
+          --additional-query-params "$ADDITIONAL_QUERY" \
           --json-output-file .miqa_output.json --app-name gh
 
         echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
         echo "run_link=$(jq -r .link < .miqa_output.json)" >> $GITHUB_OUTPUT
+
+    - name: Warn if no LOCATIONS were provided
+      if: ${{ inputs.LOCATIONS == '' && inputs.LOCATIONS_FILE == '' }}
+      shell: bash
+      run: |
+        grid_upload_url=$(jq -r '.details.links.grid_upload' .miqa_output.json)
+        echo "⚠️ No input files were provided via LOCATIONS or LOCATIONS_FILE."
+        echo "📥 You must upload files manually through the Miqa web interface:"
+        echo "🔗 Upload here: $grid_upload_url"
 
     - name: Print Miqa Test Run Summary
       shell: bash
