@@ -96,8 +96,6 @@ def convert_location_for_cloud(location_value):
 def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None, event_id=None, app_name="mn", additional_query_params=""):
     url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
     query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
-    if event_id:
-        query += f"&event_id={event_id}"
     if additional_query_params:
         query += additional_query_params
     url += query
@@ -152,7 +150,6 @@ def main():
     parser.add_argument("--locations-file", type=str, required=False)
     parser.add_argument("--output-bucket-override", type=str, required=False)
     parser.add_argument("--json-output-file", type=str, required=False, help="Optional path to write JSON summary")
-    parser.add_argument("--event-id", type=str, required=False, help="Optional GitHub Check Run ID (for status reporting)")
     parser.add_argument("--app-name", type=str, required=False, default="mn", help="App name to include in the trigger call (e.g. 'mn' or 'gh')")
     parser.add_argument("--additional-query-params", type=str, required=False, default="", help="Extra query string (e.g. '&repo=foo&commit=sha')")
 
