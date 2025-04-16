@@ -178,7 +178,6 @@ runs:
           ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
           ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
-          ${{ env.CHECK_RUN_ID && format('--event-id {0}', env.CHECK_RUN_ID) || '' }} \
           --additional-query-params "$ADDITIONAL_QUERY" \
           --json-output-file .miqa_output.json --app-name gh
 
