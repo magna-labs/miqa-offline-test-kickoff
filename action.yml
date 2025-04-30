@@ -151,7 +151,7 @@ runs:
         method: 'POST'
         timeout: 30000
         customHeaders: '{"Content-Type": "application/json"}'
-        data: '{"installation_id":"${{ inputs.INSTALLATION_ID }}","repository_full_name":"${{ inputs.REPOSITORY }}", "head_sha":"${{ env.NEW_SHA  }}", "check_name":"${{inputs.CHECK_NAME}}", "gha_version":"1.1.5"}'
+        data: '{"installation_id":"${{ inputs.INSTALLATION_ID }}","repository_full_name":"${{ inputs.REPOSITORY }}", "head_sha":"${{ env.NEW_SHA  }}", "check_name":"${{env.CHECK_NAME}}", "gha_version":"1.1.5"}'
 
     - name: Suggest GitHub App installation if check run fails
       if: ${{ failure() && inputs.INSTALLATION_ID != '' }}
