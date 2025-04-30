@@ -71,9 +71,12 @@ def load_locations_from_file(path):
         raise ValueError(f"Unsupported file format: {path}")
 
 def convert_location_for_cloud(location_value):
+    cloud_prefix = os.getenv("MIQA_CLOUD_PREFIX")
     if isinstance(location_value, dict):
         return location_value
     if isinstance(location_value, str):
+        if cloud_prefix and not location_value.startswith("gs://") and not location_value.startswith("s3://"):
+            location_value = cloud_prefix.rstrip("/") + "/" + location_value.lstrip("/")
         if location_value.startswith("gs://") or location_value.startswith("s3://"):
             scheme, rest = location_value.split("://", 1)
             parts = rest.split("/", 1)
@@ -179,7 +182,25 @@ def download_report(run_id, report_type, output_folder, miqa_server, headers):
         print(f"❌ Failed to download {report_type.upper()} report from {report_url}. Status: {response.status_code}")
 
 def main():
-    parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.")
+    # Step 1: Parse --config if provided
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=str)
+    config_args, remaining_argv = config_parser.parse_known_args()
+    
+    defaults = {}
+    if config_args.config:
+        with open(config_args.config) as f:
+            defaults = yaml.safe_load(f) if config_args.config.endswith((".yaml", ".yml")) else json.load(f)
+    
+    # Step 2: Use env vars for fallback if not in config
+    for key in ["server", "api_key", "trigger_id", "version_name", "locations", "report_folder"]:
+        val = os.getenv(f"MIQA_{key.upper()}")
+        if val and key not in defaults:
+            defaults[key] = val
+    
+    # Step 3: Parse the rest of the args
+    parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.", parents=[config_parser])
+    parser.set_defaults(**defaults)
     parser.add_argument("--server", type=str, required=True)
     parser.add_argument("--api-key", type=str, required=True)
     parser.add_argument("--trigger-id", type=str, required=True)
@@ -199,6 +220,7 @@ def main():
     parser.add_argument("--poll-max-attempts", type=int, default=20, help="Maximum polling attempts")
     parser.add_argument("--download-reports", type=str, nargs="+", help="One or more report types to download after successful completion (e.g. 'pdf', 'json')")
     parser.add_argument("--report-folder", type=str, default=".", help="Where to save downloaded reports")
+    parser.add_argument("--default-parent-path", type=str, default="/data", help="Where to save downloaded reports")    
 
     args = parser.parse_args()
     headers = {"content-type": "application/json", "app-key": args.api_key}
@@ -242,7 +264,9 @@ def main():
                 parsed["output_bucket"] = args.output_bucket_override
             locations_lookup_by_sid[sid] = parsed
         else:
-            locations_lookup_by_sid[sid] = location_value            
+            if not os.path.isabs(location_value):
+                location_value = os.path.join(default_parent_path, location_value)
+            locations_lookup_by_sid[sid] = location_value
 
     run_info = trigger_offline_test_and_get_run_info(
         miqa_server,
