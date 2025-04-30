@@ -79,6 +79,10 @@ inputs:
     description: 'Base URL for Miqa GitHub App'
     required: false
     default: 'https://miqa-github.herokuapp.com'
+  STRICT:
+    description: 'Fail early if paths or sample names are invalid'
+    required: false
+    default: 'false'
 
 outputs:
   run_id:
@@ -170,28 +174,30 @@ runs:
       run: |
         echo "CHECK_RUN_ID=${{ fromJSON(fromJSON(toJSON(steps.create_check.outputs.response))).id }}" >> $GITHUB_ENV
 
-    - name: Run MIQA CLI Script
-      id: run_miqa
-      shell: bash
-      run: |
-        ADDITIONAL_QUERY="&repo=${{ inputs.REPOSITORY }}&commit=${{ inputs.SHA }}&event_id=${{ env.CHECK_RUN_ID }}&gha_version=miqa-offline-test-kickoff_v1.3${{ inputs.ADDITIONAL_INSTRUCTIONS }}" 
-        python "${{ github.action_path }}/run-miqa.py" \
-          --server "${{ inputs.MIQA_ENDPOINT }}" \
-          --api-key "${{ inputs.MIQA_API_KEY }}" \
-          --trigger-id "${{ inputs.TRIGGER_ID }}" \
-          --version-name "${{ inputs.VERSION_NAME }}" \
-          ${{ inputs.OUTPUTS_ALREADY_ON_CLOUD == 'true' && '--outputs-already-on-cloud' || '' }} \
-          ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
-          ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
-          ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
-          ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
-          ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
-          ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
-          --additional-query-params "$ADDITIONAL_QUERY" \
-          --json-output-file .miqa_output.json --app-name gh
-
-        echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
-        echo "run_link=$(jq -r .link < .miqa_output.json)" >> $GITHUB_OUTPUT
+  - name: Run MIQA CLI Script
+    id: run_miqa
+    shell: bash
+    run: |
+      ADDITIONAL_QUERY="&repo=${{ inputs.REPOSITORY }}&commit=${{ inputs.SHA }}&event_id=${{ env.CHECK_RUN_ID }}&gha_version=miqa-offline-test-kickoff_v1.3${{ inputs.ADDITIONAL_INSTRUCTIONS }}" 
+      python "${{ github.action_path }}/run-miqa.py" \
+        --server "${{ inputs.MIQA_ENDPOINT }}" \
+        --api-key "${{ inputs.MIQA_API_KEY }}" \
+        --trigger-id "${{ inputs.TRIGGER_ID }}" \
+        --version-name "${{ inputs.VERSION_NAME }}" \
+        ${{ inputs.OUTPUTS_ALREADY_ON_CLOUD == 'true' && '--outputs-already-on-cloud' || '' }} \
+        ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
+        ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
+        ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
+        ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
+        ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
+        ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
+        ${{ inputs.STRICT != 'false' && '--strict' || '' }} \
+        --additional-query-params "$ADDITIONAL_QUERY" \
+        --json-output-file .miqa_output.json \
+        --app-name gh
+  
+      echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
+      echo "run_link=$(jq -r .link < .miqa_output.json)" >> $GITHUB_OUTPUT
 
     - name: Warn if no LOCATIONS were provided
       if: ${{ inputs.LOCATIONS == '' && inputs.LOCATIONS_FILE == '' }}
@@ -201,6 +207,13 @@ runs:
         echo "⚠️ No input files were provided via LOCATIONS or LOCATIONS_FILE."
         echo "📥 You must upload files manually through the Miqa web interface:"
         echo "🔗 Upload here: $grid_upload_url"
+
+    - name: Suggest retry without strict mode
+      if: failure() && inputs.STRICT == 'true'
+      shell: bash
+      run: |
+        echo "❌ Miqa test failed in strict mode."
+        echo "👉 You can try re-running with 'STRICT: false' to allow missing sample names or unresolved paths."
 
     - name: Print Miqa Test Run Summary
       shell: bash
