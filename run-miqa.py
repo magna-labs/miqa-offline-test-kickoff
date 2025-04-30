@@ -181,6 +181,38 @@ def download_report(run_id, report_type, output_folder, miqa_server, headers):
     else:
         print(f"❌ Failed to download {report_type.upper()} report from {report_url}. Status: {response.status_code}")
 
+def log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid):
+    from rich.console import Console
+    from rich.table import Table
+    console = Console()
+    table = Table(title="📋 Effective Miqa Parameters", show_lines=True)
+
+    table.add_column("Parameter", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+
+    display_items = {
+        "Server": args.server,
+        "Trigger ID": args.trigger_id,
+        "Version Name": args.version_name,
+        "Outputs on Cloud": str(args.outputs_already_on_cloud),
+        "Report Folder": args.report_folder,
+        "Wait for Completion": str(args.wait_for_completion),
+        "Download Reports": ", ".join(args.download_reports or []),
+    }
+
+    for key, val in display_items.items():
+        table.add_row(key, str(val))
+
+    table.add_row("Resolved Paths", "")
+    reverse_sid_map = {v: k for k, v in ds_id_mapping.items()}
+
+    for sid, resolved in locations_lookup_by_sid.items():
+        sample_name = reverse_sid_map.get(sid, "(unknown)")
+        resolved_str = json.dumps(resolved, indent=2) if isinstance(resolved, dict) else str(resolved)
+        table.add_row(f"  {sample_name} ({sid})", resolved_str)
+
+    console.print(table)
+
 def main():
     # Step 1: Parse --config if provided
     config_parser = argparse.ArgumentParser(add_help=False)
@@ -198,6 +230,10 @@ def main():
         if val and key not in defaults:
             defaults[key] = val
     
+    if "report_folder" not in defaults:
+        defaults["report_folder"] = "."
+
+
     # Step 3: Parse the rest of the args
     parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.", parents=[config_parser])
     parser.set_defaults(**defaults)
@@ -219,8 +255,9 @@ def main():
     parser.add_argument("--poll-frequency", type=int, default=60, help="Seconds between poll attempts")
     parser.add_argument("--poll-max-attempts", type=int, default=20, help="Maximum polling attempts")
     parser.add_argument("--download-reports", type=str, nargs="+", help="One or more report types to download after successful completion (e.g. 'pdf', 'json')")
-    parser.add_argument("--report-folder", type=str, default=".", help="Where to save downloaded reports")
+    parser.add_argument("--report-folder", type=str, help="Where to save downloaded reports")
     parser.add_argument("--default-parent-path", type=str, default="/data", help="Where to save downloaded reports")    
+    parser.add_argument('--open-link', action='store_true', help="Open the test run link immediately.")
 
     args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key}
@@ -274,6 +311,9 @@ def main():
             if not os.path.isabs(location_value):
                 location_value = os.path.join(args.default_parent_path, location_value)
             locations_lookup_by_sid[sid] = location_value
+
+
+    log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid)
 
     run_info = trigger_offline_test_and_get_run_info(
         miqa_server,
@@ -364,6 +404,21 @@ def main():
     if args.json_output_file:
         with open(args.json_output_file, "w") as f:
             json.dump(run_info, f)
+
+    link = run_info.get("link")
+    if link:
+        print("\n🔗 Open the test run here:")
+        print(link)
+
+        # If the user specified to open the link, do it
+        if args.open_link:
+            try:
+                import webbrowser
+                print("Opening the link now...")
+                webbrowser.open(link)
+            except Exception as e:
+                print(f"⚠️ Could not open browser: {e}")
+
 
 if __name__ == "__main__":
     main()
