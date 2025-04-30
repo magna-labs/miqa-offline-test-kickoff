@@ -201,10 +201,10 @@ def main():
     # Step 3: Parse the rest of the args
     parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.", parents=[config_parser])
     parser.set_defaults(**defaults)
-    parser.add_argument("--server", type=str, required=True)
-    parser.add_argument("--api-key", type=str, required=True)
-    parser.add_argument("--trigger-id", type=str, required=True)
-    parser.add_argument("--version-name", type=str, required=True)
+    parser.add_argument("--server", type=str, required="server" not in defaults)
+    parser.add_argument("--api-key", type=str, required="api_key" not in defaults)
+    parser.add_argument("--trigger-id", type=str, required="trigger_id" not in defaults)
+    parser.add_argument("--version-name", type=str, required="version_name" not in defaults)
     parser.add_argument("--outputs-already-on-cloud", action='store_true')
     parser.add_argument("--get-metadata-key", type=str, required=False)
     parser.add_argument("--get-metadata-value", type=str, required=False)
@@ -222,7 +222,7 @@ def main():
     parser.add_argument("--report-folder", type=str, default=".", help="Where to save downloaded reports")
     parser.add_argument("--default-parent-path", type=str, default="/data", help="Where to save downloaded reports")    
 
-    args = parser.parse_args()
+    args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key}
     miqa_server = normalize_miqa_endpoint(args.server)
 
@@ -236,8 +236,11 @@ def main():
     if args.locations_file:
         locations_lookup_by_samplename = load_locations_from_file(args.locations_file)
     else:
-        locations_raw = interpolate_env_variables(args.locations)
-        locations_lookup_by_samplename = parse_yaml_or_json(locations_raw)
+        if isinstance(args.locations, str):
+            locations_raw = interpolate_env_variables(args.locations)
+            locations_lookup_by_samplename = parse_yaml_or_json(locations_raw)
+        else:
+            locations_lookup_by_samplename = args.locations
 
     set_metadata_raw = interpolate_env_variables(args.set_metadata or "")
     set_metadata_dict = parse_yaml_or_json(set_metadata_raw) if args.set_metadata else None
@@ -255,8 +258,12 @@ def main():
             passed_names_not_in_mapping = True
             continue
 
-        if not args.outputs_already_on_cloud and isinstance(location_value, str) and not os.path.exists(location_value):
-            print(f"⚠️ Path does not exist for sample '{sample_name}': {location_value}")
+        if not args.outputs_already_on_cloud:
+            if isinstance(location_value, str) and not os.path.isabs(location_value):
+                location_value = os.path.join(args.default_parent_path, location_value)
+            if isinstance(location_value, str) and not os.path.exists(location_value):
+                print(f"⚠️ Path does not exist for sample '{sample_name}': {location_value}")
+
 
         if args.outputs_already_on_cloud:
             parsed = convert_location_for_cloud(location_value)
@@ -265,7 +272,7 @@ def main():
             locations_lookup_by_sid[sid] = parsed
         else:
             if not os.path.isabs(location_value):
-                location_value = os.path.join(default_parent_path, location_value)
+                location_value = os.path.join(args.default_parent_path, location_value)
             locations_lookup_by_sid[sid] = location_value
 
     run_info = trigger_offline_test_and_get_run_info(
