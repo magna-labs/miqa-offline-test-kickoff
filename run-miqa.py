@@ -259,14 +259,15 @@ def main():
     parser.add_argument("--default-parent-path", type=str, default="/data", help="Where to save downloaded reports")    
     parser.add_argument('--open-link', action='store_true', help="Open the test run link immediately.")
     parser.add_argument('--strict', action='store_true', help="Fail if paths or samples are invalid")
+    parser.add_argument(
+        "--docker-mode",
+        action="store_true",
+        help="Resolve relative paths under the default parent (e.g. /data). Used inside Docker containers."
+    )
 
     args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key}
     miqa_server = normalize_miqa_endpoint(args.server)
-
-    def is_running_in_docker():
-        return os.path.exists('/.dockerenv') or os.environ.get("MIQA_FORCE_DOCKER_PATHS") == "1"
-
 
     if not args.locations and not args.locations_file:
         raise Exception("You must provide either --locations or --locations-file.")
@@ -304,10 +305,11 @@ def main():
 
         if not args.outputs_already_on_cloud:
             if isinstance(location_value, str) and not os.path.isabs(location_value):
-                if is_running_in_docker():
+                if args.docker_mode:
                     location_value = os.path.join(args.default_parent_path, location_value)
                 else:
                     location_value = os.path.abspath(location_value)
+        
             if isinstance(location_value, str) and not os.path.exists(location_value):
                 msg = f"Path does not exist for sample '{sample_name}': {location_value}"
                 if args.strict:
