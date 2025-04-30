@@ -258,6 +258,7 @@ def main():
     parser.add_argument("--report-folder", type=str, help="Where to save downloaded reports")
     parser.add_argument("--default-parent-path", type=str, default="/data", help="Where to save downloaded reports")    
     parser.add_argument('--open-link', action='store_true', help="Open the test run link immediately.")
+    parser.add_argument('--strict', action='store_true', help="Fail if paths or samples are invalid")
 
     args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key}
@@ -297,6 +298,8 @@ def main():
         sid = ds_id_mapping.get(sample_name)
         if not sid:
             passed_names_not_in_mapping = True
+            if args.strict:
+                raise ValueError(f"❌ Strict mode: sample '{sample_name}' not found in trigger mapping.")
             continue
 
         if not args.outputs_already_on_cloud:
@@ -306,8 +309,11 @@ def main():
                 else:
                     location_value = os.path.abspath(location_value)
             if isinstance(location_value, str) and not os.path.exists(location_value):
-                print(f"⚠️ Path does not exist for sample '{sample_name}': {location_value}")
-
+                msg = f"Path does not exist for sample '{sample_name}': {location_value}"
+                if args.strict:
+                    raise FileNotFoundError(f"❌ Strict mode: {msg}")
+                else:
+                    print(f"⚠️ {msg}")
 
         if args.outputs_already_on_cloud:
             parsed = convert_location_for_cloud(location_value)
@@ -321,6 +327,10 @@ def main():
 
 
     log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid)
+
+    if args.strict and not locations_lookup_by_sid:
+        raise RuntimeError("❌ Strict mode: No valid sample paths were resolved. Aborting.")
+
 
     run_info = trigger_offline_test_and_get_run_info(
         miqa_server,
