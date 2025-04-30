@@ -68,7 +68,7 @@ inputs:
   CHECK_NAME:
     description: 'Name to display in checks status'
     required: false
-    default: 'Triggered Miqa Offline Test'
+    default: ''
   SHA:
     description: 'Commit SHA (e.g., github.sha)'
     required: false
@@ -101,6 +101,15 @@ runs:
     - name: Install dependencies
       shell: bash
       run: pip install -r "${{ github.action_path }}/requirements.txt"
+
+    - name: Set CHECK_NAME dynamically
+      shell: bash
+      run: |
+        CHECK_NAME_INPUT="${{ inputs.CHECK_NAME }}"
+        if [ -z "$CHECK_NAME_INPUT" ]; then
+          CHECK_NAME_INPUT="Triggered Miqa Offline Test: ${{ inputs.TRIGGER_ID }}"
+        fi
+        echo "CHECK_NAME=$CHECK_NAME_INPUT" >> $GITHUB_ENV
 
     - name: Write LOCATIONS to file
       if: ${{ inputs.LOCATIONS != '' }}
