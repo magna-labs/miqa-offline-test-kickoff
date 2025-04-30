@@ -71,9 +71,12 @@ def load_locations_from_file(path):
         raise ValueError(f"Unsupported file format: {path}")
 
 def convert_location_for_cloud(location_value):
+    cloud_prefix = os.getenv("MIQA_CLOUD_PREFIX")
     if isinstance(location_value, dict):
         return location_value
     if isinstance(location_value, str):
+        if cloud_prefix and not location_value.startswith("gs://") and not location_value.startswith("s3://"):
+            location_value = cloud_prefix.rstrip("/") + "/" + location_value.lstrip("/")
         if location_value.startswith("gs://") or location_value.startswith("s3://"):
             scheme, rest = location_value.split("://", 1)
             parts = rest.split("/", 1)
@@ -178,12 +181,66 @@ def download_report(run_id, report_type, output_folder, miqa_server, headers):
     else:
         print(f"❌ Failed to download {report_type.upper()} report from {report_url}. Status: {response.status_code}")
 
+def log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid):
+    from rich.console import Console
+    from rich.table import Table
+    console = Console()
+    table = Table(title="📋 Effective Miqa Parameters", show_lines=True)
+
+    table.add_column("Parameter", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+
+    display_items = {
+        "Server": args.server,
+        "Trigger ID": args.trigger_id,
+        "Version Name": args.version_name,
+        "Outputs on Cloud": str(args.outputs_already_on_cloud),
+        "Report Folder": args.report_folder,
+        "Wait for Completion": str(args.wait_for_completion),
+        "Download Reports": ", ".join(args.download_reports or []),
+    }
+
+    for key, val in display_items.items():
+        table.add_row(key, str(val))
+
+    table.add_row("Resolved Paths", "")
+    reverse_sid_map = {v: k for k, v in ds_id_mapping.items()}
+
+    for sid, resolved in locations_lookup_by_sid.items():
+        sample_name = reverse_sid_map.get(sid, "(unknown)")
+        resolved_str = json.dumps(resolved, indent=2) if isinstance(resolved, dict) else str(resolved)
+        table.add_row(f"  {sample_name} ({sid})", resolved_str)
+
+    console.print(table)
+
 def main():
-    parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.")
-    parser.add_argument("--server", type=str, required=True)
-    parser.add_argument("--api-key", type=str, required=True)
-    parser.add_argument("--trigger-id", type=str, required=True)
-    parser.add_argument("--version-name", type=str, required=True)
+    # Step 1: Parse --config if provided
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=str)
+    config_args, remaining_argv = config_parser.parse_known_args()
+    
+    defaults = {}
+    if config_args.config:
+        with open(config_args.config) as f:
+            defaults = yaml.safe_load(f) if config_args.config.endswith((".yaml", ".yml")) else json.load(f)
+    
+    # Step 2: Use env vars for fallback if not in config
+    for key in ["server", "api_key", "trigger_id", "version_name", "locations", "report_folder"]:
+        val = os.getenv(f"MIQA_{key.upper()}")
+        if val and key not in defaults:
+            defaults[key] = val
+    
+    if "report_folder" not in defaults:
+        defaults["report_folder"] = "."
+
+
+    # Step 3: Parse the rest of the args
+    parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.", parents=[config_parser])
+    parser.set_defaults(**defaults)
+    parser.add_argument("--server", type=str, required="server" not in defaults)
+    parser.add_argument("--api-key", type=str, required="api_key" not in defaults)
+    parser.add_argument("--trigger-id", type=str, required="trigger_id" not in defaults)
+    parser.add_argument("--version-name", type=str, required="version_name" not in defaults)
     parser.add_argument("--outputs-already-on-cloud", action='store_true')
     parser.add_argument("--get-metadata-key", type=str, required=False)
     parser.add_argument("--get-metadata-value", type=str, required=False)
@@ -198,11 +255,18 @@ def main():
     parser.add_argument("--poll-frequency", type=int, default=60, help="Seconds between poll attempts")
     parser.add_argument("--poll-max-attempts", type=int, default=20, help="Maximum polling attempts")
     parser.add_argument("--download-reports", type=str, nargs="+", help="One or more report types to download after successful completion (e.g. 'pdf', 'json')")
-    parser.add_argument("--report-folder", type=str, default=".", help="Where to save downloaded reports")
+    parser.add_argument("--report-folder", type=str, help="Where to save downloaded reports")
+    parser.add_argument("--default-parent-path", type=str, default="/data", help="Where to save downloaded reports")    
+    parser.add_argument('--open-link', action='store_true', help="Open the test run link immediately.")
+    parser.add_argument('--strict', action='store_true', help="Fail if paths or samples are invalid")
 
-    args = parser.parse_args()
+    args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key}
     miqa_server = normalize_miqa_endpoint(args.server)
+
+    def is_running_in_docker():
+        return os.path.exists('/.dockerenv') or os.environ.get("MIQA_FORCE_DOCKER_PATHS") == "1"
+
 
     if not args.locations and not args.locations_file:
         raise Exception("You must provide either --locations or --locations-file.")
@@ -214,8 +278,11 @@ def main():
     if args.locations_file:
         locations_lookup_by_samplename = load_locations_from_file(args.locations_file)
     else:
-        locations_raw = interpolate_env_variables(args.locations)
-        locations_lookup_by_samplename = parse_yaml_or_json(locations_raw)
+        if isinstance(args.locations, str):
+            locations_raw = interpolate_env_variables(args.locations)
+            locations_lookup_by_samplename = parse_yaml_or_json(locations_raw)
+        else:
+            locations_lookup_by_samplename = args.locations
 
     set_metadata_raw = interpolate_env_variables(args.set_metadata or "")
     set_metadata_dict = parse_yaml_or_json(set_metadata_raw) if args.set_metadata else None
@@ -231,10 +298,22 @@ def main():
         sid = ds_id_mapping.get(sample_name)
         if not sid:
             passed_names_not_in_mapping = True
+            if args.strict:
+                raise ValueError(f"❌ Strict mode: sample '{sample_name}' not found in trigger mapping.")
             continue
 
-        if not args.outputs_already_on_cloud and isinstance(location_value, str) and not os.path.exists(location_value):
-            print(f"⚠️ Path does not exist for sample '{sample_name}': {location_value}")
+        if not args.outputs_already_on_cloud:
+            if isinstance(location_value, str) and not os.path.isabs(location_value):
+                if is_running_in_docker():
+                    location_value = os.path.join(args.default_parent_path, location_value)
+                else:
+                    location_value = os.path.abspath(location_value)
+            if isinstance(location_value, str) and not os.path.exists(location_value):
+                msg = f"Path does not exist for sample '{sample_name}': {location_value}"
+                if args.strict:
+                    raise FileNotFoundError(f"❌ Strict mode: {msg}")
+                else:
+                    print(f"⚠️ {msg}")
 
         if args.outputs_already_on_cloud:
             parsed = convert_location_for_cloud(location_value)
@@ -242,7 +321,16 @@ def main():
                 parsed["output_bucket"] = args.output_bucket_override
             locations_lookup_by_sid[sid] = parsed
         else:
-            locations_lookup_by_sid[sid] = location_value            
+            if not os.path.isabs(location_value):
+                location_value = os.path.join(args.default_parent_path, location_value)
+            locations_lookup_by_sid[sid] = location_value
+
+
+    log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid)
+
+    if args.strict and not locations_lookup_by_sid:
+        raise RuntimeError("❌ Strict mode: No valid sample paths were resolved. Aborting.")
+
 
     run_info = trigger_offline_test_and_get_run_info(
         miqa_server,
@@ -333,6 +421,21 @@ def main():
     if args.json_output_file:
         with open(args.json_output_file, "w") as f:
             json.dump(run_info, f)
+
+    link = run_info.get("link")
+    if link:
+        print("\n🔗 Open the test run here:")
+        print(link)
+
+        # If the user specified to open the link, do it
+        if args.open_link:
+            try:
+                import webbrowser
+                print("Opening the link now...")
+                webbrowser.open(link)
+            except Exception as e:
+                print(f"⚠️ Could not open browser: {e}")
+
 
 if __name__ == "__main__":
     main()
