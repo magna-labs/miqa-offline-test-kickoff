@@ -82,7 +82,7 @@ inputs:
   STRICT:
     description: 'Fail early if paths or sample names are invalid'
     required: false
-    default: 'false'
+    default: 'true'
 
 outputs:
   run_id:
