@@ -105,11 +105,11 @@ runs:
     - name: Set CHECK_NAME dynamically
       shell: bash
       run: |
-        CHECK_NAME_INPUT="${{ inputs.CHECK_NAME }}"
-        if [ -z "$CHECK_NAME_INPUT" ]; then
-          CHECK_NAME_INPUT="Triggered Miqa Offline Test: ${{ inputs.TRIGGER_ID }}"
+        if [ -z "${{ inputs.CHECK_NAME }}" ]; then
+          echo "CHECK_NAME=Triggered Miqa Offline Test: ${{ inputs.TRIGGER_ID }}" >> $GITHUB_ENV
+        else
+          echo "CHECK_NAME=${{ inputs.CHECK_NAME }}" >> $GITHUB_ENV
         fi
-        echo "CHECK_NAME=$CHECK_NAME_INPUT" >> $GITHUB_ENV
 
     - name: Write LOCATIONS to file
       if: ${{ inputs.LOCATIONS != '' }}
