@@ -127,7 +127,7 @@ runs:
         fi
 
     - name: Write LOCATIONS to file
-      if: ${{ inputs.LOCATIONS != '' && inputs.DRAG_AND_DROP_MODE != 'true' }}
+      if: ${{ inputs.LOCATIONS != '' }}
       shell: bash
       run: echo "${{ inputs.LOCATIONS }}" > .locations.yaml
 
@@ -206,8 +206,8 @@ runs:
           ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
           ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
           ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
-          ${{ inputs.LOCATIONS != '' && inputs.DRAG_AND_DROP_MODE != 'true' && '--locations-file .locations.yaml' || '' }} \
-          ${{ inputs.LOCATIONS_FILE && inputs.DRAG_AND_DROP_MODE != 'true' && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
+          ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
+          ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
           ${{ inputs.DRAG_AND_DROP_MODE != 'true' && inputs.STRICT != 'false' && '--strict' || '' }} \
           --additional-query-params "$ADDITIONAL_QUERY" \
