@@ -221,7 +221,8 @@ runs:
     - name: Print Miqa Test Run Summary
       shell: bash
       run: |
-        echo ""
+        # Final summary
+        echo "========================================================"
         echo "✅ Miqa Test Run is ready!"
         echo "🧪 Run ID: ${{ steps.run_miqa.outputs.run_id }}"
         echo "🔗 View results: ${{ steps.run_miqa.outputs.run_link }}"
