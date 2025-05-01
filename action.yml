@@ -83,6 +83,14 @@ inputs:
     description: 'Fail early if paths or sample names are invalid'
     required: false
     default: 'true'
+  DRAG_AND_DROP_MODE:
+    description: 'Enable drag-and-drop mode (disables strict mode and skips file upload)'
+    required: false
+    default: 'false'
+  DELAY_BEFORE_RUN_SECONDS:
+    description: 'Optional delay before test kickoff (seconds). Helps stagger runs in high-concurrency environments.'
+    required: false
+    default: '3'
 
 outputs:
   run_id:
@@ -119,7 +127,7 @@ runs:
         fi
 
     - name: Write LOCATIONS to file
-      if: ${{ inputs.LOCATIONS != '' }}
+      if: ${{ inputs.LOCATIONS != '' && inputs.DRAG_AND_DROP_MODE != 'true' }}
       shell: bash
       run: echo "${{ inputs.LOCATIONS }}" > .locations.yaml
 
@@ -177,6 +185,13 @@ runs:
       run: |
         echo "CHECK_RUN_ID=${{ fromJSON(fromJSON(toJSON(steps.create_check.outputs.response))).id }}" >> $GITHUB_ENV
 
+    - name: Wait briefly before test kickoff
+      if: ${{ inputs.DELAY_BEFORE_RUN_SECONDS != '0' }}
+      shell: bash
+      run: |
+        echo "⏱️ Delaying test kickoff by ${{ inputs.DELAY_BEFORE_RUN_SECONDS }}s to reduce request contention..."
+        sleep "${{ inputs.DELAY_BEFORE_RUN_SECONDS }}"
+
     - name: Run MIQA CLI Script
       id: run_miqa
       shell: bash
@@ -191,24 +206,30 @@ runs:
           ${{ inputs.GET_METADATA_KEY && format('--get-metadata-key \"{0}\"', inputs.GET_METADATA_KEY) || '' }} \
           ${{ inputs.GET_METADATA_VALUE && format('--get-metadata-value \"{0}\"', inputs.GET_METADATA_VALUE) || '' }} \
           ${{ inputs.SET_METADATA && format('--set-metadata \"{0}\"', inputs.SET_METADATA) || '' }} \
-          ${{ inputs.LOCATIONS != '' && '--locations-file .locations.yaml' || '' }} \
-          ${{ inputs.LOCATIONS_FILE && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
+          ${{ inputs.LOCATIONS != '' && inputs.DRAG_AND_DROP_MODE != 'true' && '--locations-file .locations.yaml' || '' }} \
+          ${{ inputs.LOCATIONS_FILE && inputs.DRAG_AND_DROP_MODE != 'true' && format('--locations-file \"{0}\"', inputs.LOCATIONS_FILE) || '' }} \
           ${{ inputs.OUTPUT_BUCKET_OVERRIDE && format('--output-bucket-override \"{0}\"', inputs.OUTPUT_BUCKET_OVERRIDE) || '' }} \
-          ${{ inputs.STRICT != 'false' && '--strict' || '' }} \
+          ${{ inputs.DRAG_AND_DROP_MODE != 'true' && inputs.STRICT != 'false' && '--strict' || '' }} \
           --additional-query-params "$ADDITIONAL_QUERY" \
           --json-output-file .miqa_output.json \
           --app-name gh
-    
+
         echo "run_id=$(jq -r .run_id < .miqa_output.json)" >> $GITHUB_OUTPUT
         echo "run_link=$(jq -r .link < .miqa_output.json)" >> $GITHUB_OUTPUT
 
-    - name: Warn if no LOCATIONS were provided
-      if: ${{ inputs.LOCATIONS == '' && inputs.LOCATIONS_FILE == '' }}
+    - name: Show upload instructions if no files provided
+      if: ${{ (inputs.LOCATIONS == '' && inputs.LOCATIONS_FILE == '') || inputs.DRAG_AND_DROP_MODE == 'true' }}
       shell: bash
       run: |
         grid_upload_url=$(jq -r '.details.links.grid_upload' .miqa_output.json)
-        echo "⚠️ No input files were provided via LOCATIONS or LOCATIONS_FILE."
-        echo "📥 You must upload files manually through the Miqa web interface:"
+
+        if [ "$INPUT_DRAG_AND_DROP_MODE" = "true" ]; then
+          echo "📦 Drag-and-drop mode is enabled. Please upload your files manually via the Miqa web interface:"
+        else
+          echo "⚠️ No input files were provided via LOCATIONS or LOCATIONS_FILE."
+          echo "📥 You must upload files manually through the Miqa web interface:"
+        fi
+
         echo "🔗 Upload here: $grid_upload_url"
 
     - name: Suggest retry without strict mode
