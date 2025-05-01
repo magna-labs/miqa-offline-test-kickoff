@@ -104,7 +104,10 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: pip install -r "${{ github.action_path }}/requirements.txt"
+      run: |
+        echo "::group::Installing Python dependencies"
+        pip install -r "${{ github.action_path }}/requirements.txt" --quiet --disable-pip-version-check --no-input
+        echo "::endgroup::"
 
     - name: Set CHECK_NAME dynamically
       shell: bash
