@@ -91,10 +91,6 @@ inputs:
     description: 'Optional delay before test kickoff (seconds). Helps stagger runs in high-concurrency environments.'
     required: false
     default: '3'
-  ADDITIONAL_INSTRUCTIONS:
-    description: 'Optional additional query string instructions to include in the run'
-    required: false
-    default: ''
 
 outputs:
   run_id:
@@ -152,35 +148,40 @@ runs:
       id: get_sha
       shell: bash
       run: |
+        echo "parent_sha=${{ toJSON(fromJSON(steps.fetch_sha.outputs.data).parents[1].sha) }}" >> "$GITHUB_OUTPUT"
+
+    - if: ${{ inputs.INSTALLATION_ID != '' && github.event_name == 'pull_request' && steps.get_sha.outputs.parent_sha != 'null' }}
+      shell: bash
+      run: |
         mkdir -p /tmp/miqa
-        echo "${{ toJSON(fromJSON(steps.fetch_sha.outputs.data).parents[1].sha) }}" > /tmp/miqa/new_sha
+        echo "${{ steps.get_sha.outputs.parent_sha }}" > /tmp/miqa/new_sha
 
     - if: ${{ inputs.INSTALLATION_ID != '' && (github.event_name != 'pull_request' || steps.get_sha.outputs.parent_sha == 'null') }}
       shell: bash
       run: |
+        mkdir -p /tmp/miqa
         echo "${{ inputs.SHA }}" > /tmp/miqa/new_sha
+
+    - name: Read CHECK_NAME from file
+      id: read_check_name
+      shell: bash
+      run: echo "value=$(cat /tmp/miqa/check_name)" >> $GITHUB_OUTPUT
+
+    - name: Read NEW_SHA from file
+      id: read_new_sha
+      shell: bash
+      run: echo "value=$(cat /tmp/miqa/new_sha)" >> $GITHUB_OUTPUT
 
     - name: Create GitHub Check Run
       if: ${{ inputs.INSTALLATION_ID != '' }}
       id: create_check
       uses: fjogeleit/http-request-action@v1.14.0
-      env:
-        INSTALLATION_ID: ${{ inputs.INSTALLATION_ID }}
-        REPOSITORY: ${{ inputs.REPOSITORY }}
-        MIQA_GITHUB_APP: ${{ inputs.MIQA_GITHUB_APP }}
       with:
-        url: '${{ env.MIQA_GITHUB_APP }}/create_check_manual'
+        url: '${{ inputs.MIQA_GITHUB_APP }}/create_check_manual'
         method: 'POST'
         timeout: 30000
         customHeaders: '{"Content-Type": "application/json"}'
-        data: |
-          {
-            "installation_id": "${INSTALLATION_ID}",
-            "repository_full_name": "${REPOSITORY}",
-            "head_sha": "$(cat /tmp/miqa/new_sha)",
-            "check_name": "$(cat /tmp/miqa/check_name)",
-            "gha_version": "1.1.5"
-          }
+        data: '{"installation_id":"${{ inputs.INSTALLATION_ID }}","repository_full_name":"${{ inputs.REPOSITORY }}", "head_sha":"${{ steps.read_new_sha.outputs.value }}", "check_name":"${{ steps.read_check_name.outputs.value }}", "gha_version":"1.1.5"}'
 
     - name: Suggest GitHub App installation if check run fails
       if: ${{ failure() && inputs.INSTALLATION_ID != '' }}
@@ -197,7 +198,12 @@ runs:
       if: ${{ inputs.INSTALLATION_ID != '' }}
       shell: bash
       run: |
-        echo "${{ steps.create_check.outputs.response }}" | jq -r '.id' > /tmp/miqa/check_run_id
+        echo "${{ fromJSON(fromJSON(toJSON(steps.create_check.outputs.response))).id }}" > /tmp/miqa/check_run_id
+
+    - name: Read CHECK_RUN_ID from file
+      id: read_check_run_id
+      shell: bash
+      run: echo "value=$(cat /tmp/miqa/check_run_id)" >> $GITHUB_OUTPUT
 
     - name: Wait briefly before test kickoff
       if: ${{ inputs.DELAY_BEFORE_RUN_SECONDS != '0' }}
@@ -210,10 +216,7 @@ runs:
       id: run_miqa
       shell: bash
       run: |
-        CHECK_NAME=$(cat /tmp/miqa/check_name)
-        NEW_SHA=$(cat /tmp/miqa/new_sha)
-        CHECK_RUN_ID=$(cat /tmp/miqa/check_run_id)
-        ADDITIONAL_QUERY="&repo=${{ inputs.REPOSITORY }}&commit=${{ inputs.SHA }}&event_id=${CHECK_RUN_ID}&gha_version=miqa-offline-test-kickoff_v1.3${{ inputs.ADDITIONAL_INSTRUCTIONS }}"
+        ADDITIONAL_QUERY="&repo=${{ inputs.REPOSITORY }}&commit=${{ inputs.SHA }}&event_id=${{ steps.read_check_run_id.outputs.value }}&gha_version=miqa-offline-test-kickoff_v1.3${{ inputs.ADDITIONAL_INSTRUCTIONS }}" 
         python "${{ github.action_path }}/run-miqa.py" \
           --server "${{ inputs.MIQA_ENDPOINT }}" \
           --api-key "${{ inputs.MIQA_API_KEY }}" \
