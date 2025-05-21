@@ -225,7 +225,7 @@ def main():
             defaults = yaml.safe_load(f) if config_args.config.endswith((".yaml", ".yml")) else json.load(f)
     
     # Step 2: Use env vars for fallback if not in config
-    for key in ["server", "api_key", "trigger_id", "version_name", "locations", "report_folder"]:
+    for key in ["server", "api_key", "trigger_id", "version_name", "locations", "report_folder", "output_parent_folder"]:
         val = os.getenv(f"MIQA_{key.upper()}")
         if val and key not in defaults:
             defaults[key] = val
@@ -259,6 +259,7 @@ def main():
     parser.add_argument("--default-parent-path", type=str, default="/data", help="Where to save downloaded reports")    
     parser.add_argument('--open-link', action='store_true', help="Open the test run link immediately.")
     parser.add_argument('--strict', action='store_true', help="Fail if paths or samples are invalid")
+    parser.add_argument("--output-parent-folder", type=str, help="Prefix to prepend to each output_folder when uploading or specifying cloud locations")
     parser.add_argument(
         "--docker-mode",
         action="store_true",
@@ -321,6 +322,10 @@ def main():
             parsed = convert_location_for_cloud(location_value)
             if args.output_bucket_override and isinstance(parsed, dict) and "output_bucket" not in parsed:
                 parsed["output_bucket"] = args.output_bucket_override
+            # Apply output_parent_folder prefix if needed
+            if args.output_parent_folder and isinstance(parsed, dict) and "output_folder" in parsed:
+                parsed["output_folder"] = os.path.join(args.output_parent_folder.rstrip("/"), parsed["output_folder"].lstrip("/"))
+
             locations_lookup_by_sid[sid] = parsed
         else:
             if not os.path.isabs(location_value):
