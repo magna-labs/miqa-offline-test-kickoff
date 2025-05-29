@@ -267,7 +267,7 @@ def main():
     )
 
     args = parser.parse_args(remaining_argv)
-    headers = {"content-type": "application/json", "app-key": args.api_key, , "app_key": args.api_key}
+    headers = {"content-type": "application/json", "app-key": args.api_key, "app_key": args.api_key}
     miqa_server = normalize_miqa_endpoint(args.server)
 
     if not args.locations and not args.locations_file:
