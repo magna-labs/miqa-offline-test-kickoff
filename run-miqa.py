@@ -99,7 +99,7 @@ def convert_location_for_cloud(location_value):
 
 def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None, app_name="mn", additional_query_params=""):
     url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
-    query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1"
+    query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs=False"
     if additional_query_params:
         query += additional_query_params
     url += query
