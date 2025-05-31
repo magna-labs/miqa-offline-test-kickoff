@@ -97,9 +97,9 @@ def convert_location_for_cloud(location_value):
         return {"output_folder": location_value}
     raise ValueError(f"Unrecognized location format: {location_value}")
 
-def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None, app_name="mn", additional_query_params=""):
+def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None, app_name="mn", additional_query_params="", raise_if_multi_execs=False):
     url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
-    query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs=False"
+    query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs={raise_if_multi_execs}"
     if additional_query_params:
         query += additional_query_params
     url += query
@@ -265,6 +265,7 @@ def main():
         action="store_true",
         help="Resolve relative paths under the default parent (e.g. /data). Used inside Docker containers."
     )
+    parser.add_argument("--raise-if-multi-execs", action='store_true')
 
     args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key, "app_key": args.api_key}
@@ -348,6 +349,7 @@ def main():
         locations_lookup_by_sid,
         app_name=args.app_name,
         additional_query_params=args.additional_query_params,
+        raise_if_multi_execs=args.raise_if_multi_execs,
     )
     run_id = run_info.get("run_id")
 
