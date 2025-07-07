@@ -97,16 +97,33 @@ def convert_location_for_cloud(location_value):
         return {"output_folder": location_value}
     raise ValueError(f"Unrecognized location format: {location_value}")
 
-def trigger_offline_test_and_get_run_info(miqa_server, trigger_id, version_name, headers, local, ds_id_overrides=None, app_name="mn", additional_query_params="", raise_if_multi_execs=False):
+def trigger_offline_test_and_get_run_info(
+    miqa_server,
+    trigger_id,
+    version_name,
+    headers,
+    local,
+    ds_id_overrides=None,
+    app_name="mn",
+    additional_query_params="",
+    raise_if_multi_execs=False,
+):
     url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
     query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs={raise_if_multi_execs}"
+
     if additional_query_params:
+        print(f"🧪 Raw additional_query_params: [{additional_query_params}]")
+        print("🧪 Hexdump of additional_query_params:")
+        print("    " + " ".join(f"{ord(c):02x}" for c in additional_query_params))
         query += additional_query_params
+
     url += query
+    print(f"🧪 Final URL being called:\n{url}")
 
     body = ds_id_overrides if not local else {}
     print(f"Triggering offline test with body: {json.dumps(body, indent=2)}")
     response = requests.post(url, json=body, headers=headers)
+
     if response.ok:
         return response.json()
     else:
