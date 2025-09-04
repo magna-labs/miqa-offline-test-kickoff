@@ -32,6 +32,28 @@ def parse_yaml_or_json(string_input):
     except json.JSONDecodeError:
         return yaml.safe_load(string_input)
 
+def build_locations_from_parent_dir(parent: str, ds_id_mapping: dict, is_cloud: bool):
+    """
+    Return a dict {sample_name: location} by joining parent/<sample_name>.
+    For cloud: returns "s3://.../parent/<sample_name>" (or gs://...).
+    For local: returns os.path.join(parent, sample_name).
+    """
+    results = {}
+    if is_cloud:
+        # Expect parent like "s3://bucket/prefix" or "gs://bucket/prefix"
+        if not (parent.startswith("s3://") or parent.startswith("gs://")):
+            raise ValueError(f"Expected cloud parent to start with s3:// or gs://, got: {parent}")
+        scheme, rest = parent.split("://", 1)
+        bucket, *prefix_parts = rest.split("/", 1)
+        prefix = prefix_parts[0] if prefix_parts else ""
+        for sample_name in ds_id_mapping.keys():
+            child_prefix = f"{prefix.rstrip('/')}/{sample_name}" if prefix else sample_name
+            results[sample_name] = f"{scheme}://{bucket}/{child_prefix}"
+    else:
+        for sample_name in ds_id_mapping.keys():
+            results[sample_name] = os.path.join(parent, sample_name)
+    return results
+
 def load_locations_from_file(path):
     if path.endswith(".yaml") or path.endswith(".yml"):
         with open(path, "r") as f:
@@ -303,7 +325,27 @@ def main():
     else:
         if isinstance(args.locations, str):
             locations_raw = interpolate_env_variables(args.locations)
-            locations_lookup_by_samplename = parse_yaml_or_json(locations_raw)
+            parsed = parse_yaml_or_json(locations_raw)
+
+            # If the parsed value is a string, treat it as a parent directory and auto-expand.
+            if isinstance(parsed, str):
+                # We need ds_id_mapping to know the expected dataset names.
+                response = get_trigger_info(miqa_server, args.trigger_id)
+                if not isinstance(response, dict):
+                    raise Exception("Failed to retrieve dataset ID mapping.")
+                ds_id_mapping = response.get("ds_id_mapping", {}).get("results", {}).get("data", {})
+                if not ds_id_mapping:
+                    raise RuntimeError("Could not resolve dataset names for auto-mapping from parent directory.")
+
+                locations_lookup_by_samplename = build_locations_from_parent_dir(
+                    parsed,
+                    ds_id_mapping,
+                    args.outputs_already_on_cloud
+                )
+            elif isinstance(parsed, dict):
+                locations_lookup_by_samplename = parsed
+            else:
+                raise ValueError("--locations must be a mapping or a parent directory string")
         else:
             locations_lookup_by_samplename = args.locations
 
