@@ -308,10 +308,37 @@ def main():
     )
     parser.add_argument("--raise-if-multi-execs", action='store_true')
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
+    # TLS / corporate trust options
+    parser.add_argument("--no-os-truststore", action="store_true",
+                        help="Disable using the OS trust store (enabled by default)")
+    parser.add_argument("--ca-bundle", type=str,
+                        help="Path to a PEM CA bundle to trust for TLS")
+    parser.add_argument("--insecure", action="store_true",
+                        help="Disable TLS certificate verification (ONLY on trusted networks)")
 
     args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key, "app_key": args.api_key}
     miqa_server = normalize_miqa_endpoint(args.server)
+    
+    # --- TLS handling ---
+    use_os_trust = os.getenv("MIQA_USE_OS_TRUSTSTORE", "1").lower() not in ("0", "false", "no", "off")
+
+    if args.insecure:
+        try:
+            import ssl
+            os.environ["PYTHONHTTPSVERIFY"] = "0"
+            ssl._create_default_https_context = ssl._create_unverified_context
+        except Exception:
+            pass
+    elif args.ca_bundle:
+        os.environ["REQUESTS_CA_BUNDLE"] = args.ca_bundle
+    elif use_os_trust and not args.no_os_truststore:
+        try:
+            import truststore
+            truststore.inject_into_ssl()
+        except Exception:
+            pass
+    # ------------------------------------------------------
 
     if not args.locations and not args.locations_file:
         raise Exception("You must provide either --locations or --locations-file.")

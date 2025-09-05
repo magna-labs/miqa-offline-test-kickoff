@@ -2,3 +2,4 @@ requests
 PyYAML
 miqatools==1.1.13
 rich
+truststore>=0.8
