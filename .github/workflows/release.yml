@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Vendor runner into package
+        run: cp run-miqa.py miqa_offline/_run_miqa.py
       - run: python -m pip install --upgrade pip build twine
       - run: python -m build
       - name: Upload to PyPI

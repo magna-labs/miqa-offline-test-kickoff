@@ -1,26 +1,15 @@
 [build-system]
-requires = ["hatchling>=1.25"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "miqa-offline"
-version = "1.7.0"
-description = "Trigger Miqa offline tests, upload data, update metadata, download reports."
+version = "1.7.1"
 requires-python = ">=3.9"
-dependencies = [
-  "requests",
-  "PyYAML",
-  "rich",
-  "miqatools",
-]
+dependencies = ["requests", "PyYAML", "rich", "miqatools"]
 
 [project.scripts]
 miqa-offline = "miqa_offline.cli:main"
 
-[tool.hatch.build.targets.wheel]
-packages = ["miqa_offline"]
-include = ["run-miqa.py"]
-
-# (optional but nice for source dists)
-[tool.hatch.build.targets.sdist]
-include = ["miqa_offline/**", "run-miqa.py", "README.md", "LICENSE*"]
+[tool.setuptools.packages.find]
+include = ["miqa_offline*"]

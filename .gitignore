@@ -1,0 +1,39 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Packaging/build artifacts
+*.egg-info/
+.eggs/
+*.egg
+dist/
+build/
+pip-wheel-metadata/
+
+# Virtual envs
+.venv/
+venv/
+.env/
+.python-version
+
+# Test & coverage
+.pytest_cache/
+.coverage*
+htmlcov/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Project-specific
+miqa_offline/_run_miqa.py   # generated at build time
+reports/                    # local output dir (kept as CI artifact)
+.miqa_output.json           # local run output
