@@ -1,19 +1,15 @@
-FROM python:3.10-slim
-
-# Set working directory
+# Dockerfile
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
-# Install OS dependencies (minimal)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+# Copy only what's needed to install
+COPY pyproject.toml README.md ./
+COPY miqa_offline ./miqa_offline
+COPY run-miqa.py ./run-miqa.py
 
-# Copy script and dependencies
-COPY run-miqa.py ./
-COPY requirements.txt ./
+# Install your package (creates the `miqa-offline` CLI)
+RUN pip install --no-cache-dir .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Set default command
-ENTRYPOINT ["python", "-u", "run-miqa.py"]
-
+# Run the same command users run locally
+ENTRYPOINT ["miqa-offline"]
