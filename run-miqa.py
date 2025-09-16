@@ -149,7 +149,7 @@ def trigger_offline_test_and_get_run_info(
         print("🧪 Hexdump of additional_query_params:")
         print("    " + " ".join(f"{ord(c):02x}" for c in additional_query_params))
         # Parse additional query params and add to params dict
-        if additional_query_params.startswith("&"):
+        if additional_query_params.startswith(("&", "?")):
             additional_query_params = additional_query_params[1:]
         for param in additional_query_params.split("&"):
             if "=" in param:
