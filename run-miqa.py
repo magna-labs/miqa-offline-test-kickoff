@@ -1,5 +1,4 @@
 import argparse
-import requests
 import json
 import sys
 import yaml
@@ -7,13 +6,17 @@ import os
 import re
 import csv
 import time
+from miqatools.utilities.miqa_client import api_get, api_post
 from miqatools.remoteexecution.triggertest_helpers import get_trigger_info
 from miqatools.remoteexecution.triggertestandupload_python import (
-    trigger_test_and_upload_by_dsid,
     upload_to_test_by_dsid,
 )
 
 def normalize_miqa_endpoint(endpoint):
+    """
+    Normalize MIQA endpoint for use with MiqaClient.
+    Remove protocol and /api suffix as MiqaClient handles these.
+    """
     endpoint = endpoint.replace("https://", "").replace("http://", "")
     if endpoint.endswith("/api"):
         endpoint = endpoint[:-4]
@@ -123,7 +126,7 @@ def trigger_offline_test_and_get_run_info(
     miqa_server,
     trigger_id,
     version_name,
-    headers,
+    api_key,
     local,
     ds_id_overrides=None,
     app_name="mn",
@@ -131,64 +134,84 @@ def trigger_offline_test_and_get_run_info(
     raise_if_multi_execs=False,
     debug=False,
 ):
-    url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
-    query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs={raise_if_multi_execs}"
+    endpoint = f"test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
+    params = {
+        "app": app_name,
+        "name": version_name,
+        "offline_version": 1,
+        "skip_check_docker": 1,
+        "is_non_docker": 1,
+        "raise_if_multi_execs": raise_if_multi_execs
+    }
 
     if additional_query_params and debug:
         print(f"🧪 Raw additional_query_params: [{additional_query_params}]")
         print("🧪 Hexdump of additional_query_params:")
         print("    " + " ".join(f"{ord(c):02x}" for c in additional_query_params))
-        query += additional_query_params
+        # Parse additional query params and add to params dict
+        if additional_query_params.startswith(("&", "?")):
+            additional_query_params = additional_query_params[1:]
+        for param in additional_query_params.split("&"):
+            if "=" in param:
+                key, value = param.split("=", 1)
+                params[key] = value
 
-    url += query
     if debug:
-        print(f"🧪 Final URL being called:\n{url}")
+        print(f"🧪 Final endpoint: {endpoint}")
+        print(f"🧪 Query params: {params}")
 
     body = ds_id_overrides if not local else {}
     print(f"Triggering offline test with body: {json.dumps(body, indent=2)}")
-    response = requests.post(url, json=body, headers=headers)
+    
+    try:
+        response = api_post(endpoint, json_data=body, params=params, miqa_server=miqa_server, api_key=api_key)
+        return response
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        raise Exception(f"Failed to kick off the run at endpoint '{endpoint}'")
 
-    if response.ok:
-        return response.json()
-    else:
-        print(f"Error: {response.text}")
-        raise Exception(f"Failed to kick off the run at url '{url}'")
-
-def update_metadata(metadata, miqa_server, run_id, headers):
-    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
-    response = requests.post(update_metadata_url, json=metadata, headers=headers)
-    if response.ok:
-        return response.json()
-    else:
-        print(f"Error: {response.text}")
+def update_metadata(metadata, miqa_server, run_id, api_key):
+    endpoint = f"test_chain_run/{run_id}/set_trigger_info"
+    
+    try:
+        response = api_post(endpoint, json_data=metadata, miqa_server=miqa_server, api_key=api_key)
+        return response
+    except Exception as e:
+        print(f"Error: {str(e)}")
         raise Exception(f"Failed to update metadata for {run_id}")
 
-def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key, metadata_value):
-    url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_latest_for_metadata?metadata_key={metadata_key}&metadata_value={metadata_value}"
-    response = requests.get(url, headers=headers)
-    if response.ok:
-        return response.json().get("tcr_id")
-    else:
-        print(f"Error: {response.text}", file=sys.stderr)
+def get_latest_tcr_matching_metadata(miqa_server, api_key, run_id, metadata_key, metadata_value):
+    endpoint = f"test_chain_run/{run_id}/get_latest_for_metadata"
+    params = {
+        "metadata_key": metadata_key,
+        "metadata_value": metadata_value
+    }
+    
+    try:
+        response = api_get(endpoint, params=params, miqa_server=miqa_server, api_key=api_key)
+        return response.get("tcr_id")
+    except Exception as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
-    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_version_overrides"
-    response = requests.post(update_metadata_url, json=overrides_lookup, headers=headers)
-    if response.ok:
-        return response.json()
-    else:
-        print(f"Error: {response.text}", file=sys.stderr)
+def set_version_overrides(overrides_lookup, miqa_server, run_id, api_key):
+    endpoint = f"test_chain_run/{run_id}/set_version_overrides"
+    
+    try:
+        response = api_post(endpoint, json_data=overrides_lookup, miqa_server=miqa_server, api_key=api_key)
+        return response
+    except Exception as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seconds):
-    status_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_status"
+def poll_for_completion(run_id, miqa_server, api_key, max_checks, frequency_seconds):
+    endpoint = f"test_chain_run/{run_id}/get_status"
+    
     for attempt in range(1, max_checks + 1):
-        response = requests.get(status_url, headers=headers)
         try:
-            json_res = response.json()
+            json_res = api_get(endpoint, miqa_server=miqa_server, api_key=api_key)
         except Exception as e:
-            print(f"⚠️ Failed to parse response on attempt {attempt}: {e}")
+            print(f"⚠️ Failed to get status on attempt {attempt}: {e}")
             continue
 
         print(f"[Attempt {attempt}] Status:")
@@ -205,22 +228,25 @@ def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seco
     print(f"⏳ Reached max attempts ({max_checks}) without completion.")
     return False
 
-import os
-
-def download_report(run_id, report_type, output_folder, miqa_server, headers):
-    report_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/{report_type}"
+def download_report(run_id, report_type, output_folder, miqa_server, api_key):
+    endpoint = f"test_chain_run/{run_id}/{report_type}"
     report_path = os.path.join(output_folder, f"Miqa_Test_Report_{run_id}.{report_type}")
 
     # ✅ Ensure the folder exists
     os.makedirs(output_folder, exist_ok=True)
 
-    response = requests.get(report_url, headers=headers)
-    if response.ok:
-        with open(report_path, "wb") as f:
-            f.write(response.content)
-        print(f"📥 Report saved to {report_path}")
-    else:
-        print(f"❌ Failed to download {report_type.upper()} report from {report_url}. Status: {response.status_code}")
+    try:
+        # Use api_get with raw_response=True for binary downloads
+        response = api_get(endpoint, raw_response=True, miqa_server=miqa_server, api_key=api_key)
+        
+        if response.ok:
+            with open(report_path, "wb") as f:
+                f.write(response.content)
+            print(f"📥 Report saved to {report_path}")
+        else:
+            print(f"❌ Failed to download {report_type.upper()} report. Status: {response.status_code}")
+    except Exception as e:
+        print(f"❌ Failed to download {report_type.upper()} report from {endpoint}. Error: {str(e)}")
 
 def log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid):
     from rich.console import Console
@@ -310,7 +336,6 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
 
     args = parser.parse_args(remaining_argv)
-    headers = {"content-type": "application/json", "app-key": args.api_key, "app_key": args.api_key}
     miqa_server = normalize_miqa_endpoint(args.server)
 
     if not args.locations and not args.locations_file:
@@ -406,7 +431,7 @@ def main():
         miqa_server,
         args.trigger_id,
         args.version_name,
-        headers,
+        args.api_key,
         not args.outputs_already_on_cloud,
         locations_lookup_by_sid,
         app_name=args.app_name,
@@ -444,23 +469,23 @@ def main():
                 )
 
     if set_metadata_dict:
-        update_metadata(set_metadata_dict, miqa_server, run_id, headers)
+        update_metadata(set_metadata_dict, miqa_server, run_id, args.api_key)
 
     if args.get_metadata_key:
         latest_tcr_matching_metadata = get_latest_tcr_matching_metadata(
-            miqa_server, headers, run_id, args.get_metadata_key, args.get_metadata_value
+            miqa_server, args.api_key, run_id, args.get_metadata_key, args.get_metadata_value
         )
         print(f"Latest matching TCR is {latest_tcr_matching_metadata}")
-        set_version_overrides({"-1": latest_tcr_matching_metadata}, miqa_server, run_id, headers)
+        set_version_overrides({"-1": latest_tcr_matching_metadata}, miqa_server, run_id, args.api_key)
 
     poll_successful = True
     if args.wait_for_completion:
         print("⏳ Polling for completion...")
-        poll_successful = poll_for_completion(run_id, miqa_server, headers, args.poll_max_attempts, args.poll_frequency)
+        poll_successful = poll_for_completion(run_id, miqa_server, args.api_key, args.poll_max_attempts, args.poll_frequency)
 
     if poll_successful and args.download_reports:
         for report_type in args.download_reports:
-            download_report(run_id, report_type, args.report_folder, miqa_server, headers)
+            download_report(run_id, report_type, args.report_folder, miqa_server, args.api_key)
     elif args.download_reports and not poll_successful:
         print("⚠️ Skipping report download because test did not complete successfully.")
 
