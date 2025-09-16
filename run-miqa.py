@@ -228,14 +228,7 @@ def poll_for_completion(run_id, miqa_server, api_key, max_checks, frequency_seco
     print(f"⏳ Reached max attempts ({max_checks}) without completion.")
     return False
 
-import os
-
 def download_report(run_id, report_type, output_folder, miqa_server, api_key):
-    from miqatools.utilities.miqa_client import MiqaClient
-    
-    # For binary file downloads, we still need to use MiqaClient directly
-    # to access the underlying session for raw response handling
-    client = MiqaClient(server=miqa_server, api_key=api_key)
     endpoint = f"test_chain_run/{run_id}/{report_type}"
     report_path = os.path.join(output_folder, f"Miqa_Test_Report_{run_id}.{report_type}")
 
@@ -243,13 +236,9 @@ def download_report(run_id, report_type, output_folder, miqa_server, api_key):
     os.makedirs(output_folder, exist_ok=True)
 
     try:
-        # For binary file downloads, we need to use the underlying session
-        # Make the request through the client but access the raw response
-        import requests
-        url = client._build_url(endpoint)
-        headers = client.session.headers.copy()
+        # Use api_get with raw_response=True for binary downloads
+        response = api_get(endpoint, raw_response=True, miqa_server=miqa_server, api_key=api_key)
         
-        response = requests.get(url, headers=headers)
         if response.ok:
             with open(report_path, "wb") as f:
                 f.write(response.content)
