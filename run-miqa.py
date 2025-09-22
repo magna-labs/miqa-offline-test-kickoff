@@ -189,22 +189,40 @@ def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seco
             json_res = response.json()
         except Exception as e:
             print(f"⚠️ Failed to parse response on attempt {attempt}: {e}")
-            continue
+            # Even if parsing fails, keep trying up to max_checks
+            if attempt < max_checks:
+                time.sleep(frequency_seconds)
+                continue
+            print(f"⏳ Reached max attempts ({max_checks}) without completion.")
+            return False
 
         print(f"[Attempt {attempt}] Status:")
         print(json.dumps(json_res, indent=2))
 
-        status = json_res.get("data", {}).get("status")
-        if status == "done":
+        data = json_res.get("data", {}) or {}
+        status = data.get("status")
+        outcome = (data.get("outcome") or "").lower()
+        awaiting = bool(data.get("awaiting_results"))
+
+        # Terminal when: status is done AND we're no longer awaiting results.
+        # (Typically outcome is 'pass' or 'fail' when not awaiting.)
+        if status == "done" and not awaiting:
             print(f"✅ Miqa run {run_id} completed.")
-            print(f"📊 Outcome: {json_res.get('data', {}).get('outcome')}")
-            print(f"🔗 Link: {json_res.get('data', {}).get('link')}")
+            print(f"📊 Outcome: {outcome or '(unknown)'}")
+            print(f"🔗 Link: {data.get('link')}")
             return True
+
+        # If status reports 'done' but we are still awaiting results, keep polling
+        # until we hit max_checks.
         if attempt < max_checks:
             time.sleep(frequency_seconds)
-    print(f"⏳ Reached max attempts ({max_checks}) without completion.")
-    return False
+            continue
 
+        # Exhausted attempts and still not terminal.
+        print(f"⏳ Reached max attempts ({max_checks}) without completion.")
+        # Return False so caller can decide (e.g., skip downloads, or let CI pass).
+        return False
+        
 import os
 
 def download_report(run_id, report_type, output_folder, miqa_server, headers):
