@@ -183,45 +183,41 @@ def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
 
 def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seconds):
     status_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_status"
+    last_json = None
     for attempt in range(1, max_checks + 1):
         response = requests.get(status_url, headers=headers)
         try:
             json_res = response.json()
+            last_json = json_res
         except Exception as e:
             print(f"⚠️ Failed to parse response on attempt {attempt}: {e}")
-            # Even if parsing fails, keep trying up to max_checks
             if attempt < max_checks:
                 time.sleep(frequency_seconds)
                 continue
             print(f"⏳ Reached max attempts ({max_checks}) without completion.")
-            return False
+            return False, last_json
 
         print(f"[Attempt {attempt}] Status:")
         print(json.dumps(json_res, indent=2))
 
         data = json_res.get("data", {}) or {}
-        status = data.get("status")
+        status = (data.get("status") or "").lower()
         outcome = (data.get("outcome") or "").lower()
         awaiting = bool(data.get("awaiting_results"))
 
-        # Terminal when: status is done AND we're no longer awaiting results.
-        # (Typically outcome is 'pass' or 'fail' when not awaiting.)
+        # ✅ Terminal only when done AND not awaiting further results
         if status == "done" and not awaiting:
             print(f"✅ Miqa run {run_id} completed.")
             print(f"📊 Outcome: {outcome or '(unknown)'}")
             print(f"🔗 Link: {data.get('link')}")
-            return True
+            return True, last_json
 
-        # If status reports 'done' but we are still awaiting results, keep polling
-        # until we hit max_checks.
         if attempt < max_checks:
             time.sleep(frequency_seconds)
-            continue
 
-        # Exhausted attempts and still not terminal.
-        print(f"⏳ Reached max attempts ({max_checks}) without completion.")
-        # Return False so caller can decide (e.g., skip downloads, or let CI pass).
-        return False
+    print(f"⏳ Reached max attempts ({max_checks}) without completion.")
+    return False, last_json
+    
         
 import os
 
@@ -472,9 +468,12 @@ def main():
         set_version_overrides({"-1": latest_tcr_matching_metadata}, miqa_server, run_id, headers)
 
     poll_successful = True
+    final_status = None
     if args.wait_for_completion:
         print("⏳ Polling for completion...")
-        poll_successful = poll_for_completion(run_id, miqa_server, headers, args.poll_max_attempts, args.poll_frequency)
+        poll_successful, final_status = poll_for_completion(
+            run_id, miqa_server, headers, args.poll_max_attempts, args.poll_frequency
+        )
 
     if poll_successful and args.download_reports:
         for report_type in args.download_reports:
@@ -509,8 +508,10 @@ def main():
         print(f"   {grid_upload_url}")
 
     if args.json_output_file:
+        # Write the final status JSON if we have it; fall back to run_info
+        to_write = final_status if final_status else run_info
         with open(args.json_output_file, "w") as f:
-            json.dump(run_info, f)
+            json.dump(to_write, f)
 
     link = run_info.get("link")
     if link:
