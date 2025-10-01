@@ -187,6 +187,7 @@ def trigger_offline_test_and_get_run_info(
     docker_uri = getattr(args, "docker_uri", None)
 
     if is_online_mode:
+        print(f"Running in online mode...")
         url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/execute"
         if docker_uri:
             # Docker-style online trigger
