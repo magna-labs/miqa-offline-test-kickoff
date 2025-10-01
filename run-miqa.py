@@ -161,7 +161,6 @@ def build_instruction_suffix_from_args(args):
         return ""
     return "".join(f"&{quote_plus(k)}={quote_plus(v)}" for k, v in kv.items())
 
-# --- ORIGINAL helper restored (surgical) ---
 def update_metadata(metadata, miqa_server, run_id, headers):
     update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
     response = _req("POST", update_metadata_url, json=metadata, headers=headers)
@@ -188,10 +187,10 @@ def trigger_offline_test_and_get_run_info(
     docker_uri = getattr(args, "docker_uri", None)
 
     if is_online_mode:
-        url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/execute_and_set_details"
+        url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/execute"
         if docker_uri:
             # Docker-style online trigger
-            query = f"?app={app_name}&raise_if_multi_execs={raise_if_multi_execs}&uri={quote(docker_uri, safe=':/@._-')}&allow_override=1"
+            query = f"?app={app_name}&uri={quote(docker_uri, safe=':/@._-')}&allow_override=1"
         else:
             # Non-docker online trigger (legacy flags retained)
             query = (
@@ -200,7 +199,6 @@ def trigger_offline_test_and_get_run_info(
                 f"&offline_version=1"
                 f"&skip_check_docker=1&is_non_docker=1&force_create_new=1"
                 f"&uri=example:{version_name}"
-                f"&raise_if_multi_execs={raise_if_multi_execs}"
             )
     else:
         # ORIGINAL path (unchanged)
