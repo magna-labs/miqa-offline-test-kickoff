@@ -161,7 +161,6 @@ def build_instruction_suffix_from_args(args):
         return ""
     return "".join(f"&{quote_plus(k)}={quote_plus(v)}" for k, v in kv.items())
 
-# --- ORIGINAL helper restored (surgical) ---
 def update_metadata(metadata, miqa_server, run_id, headers):
     update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
     response = _req("POST", update_metadata_url, json=metadata, headers=headers)
