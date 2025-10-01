@@ -7,6 +7,8 @@ import os
 import re
 import csv
 import time
+from urllib.parse import quote, quote_plus
+
 from miqatools.remoteexecution.triggertest_helpers import get_trigger_info
 from miqatools.remoteexecution.triggertestandupload_python import (
     trigger_test_and_upload_by_dsid,
@@ -97,9 +99,9 @@ def convert_location_for_cloud(location_value):
     if isinstance(location_value, dict):
         return location_value
     if isinstance(location_value, str):
-        if cloud_prefix and not location_value.startswith("gs://") and not location_value.startswith("s3://"):
+        if cloud_prefix and not location_value.startswith(("gs://", "s3://")):
             location_value = cloud_prefix.rstrip("/") + "/" + location_value.lstrip("/")
-        if location_value.startswith("gs://") or location_value.startswith("s3://"):
+        if location_value.startswith(("gs://", "s3://")):
             scheme, rest = location_value.split("://", 1)
             parts = rest.split("/", 1)
             if len(parts) == 2:
@@ -119,6 +121,55 @@ def convert_location_for_cloud(location_value):
         return {"output_folder": location_value}
     raise ValueError(f"Unrecognized location format: {location_value}")
 
+def _req(method, url, **kw):
+    kw.setdefault("timeout", 30)
+    for attempt in range(1, 4):
+        try:
+            return requests.request(method, url, **kw)
+        except Exception:
+            if attempt == 3:
+                raise
+            time.sleep(1.5 * attempt)
+
+def build_instruction_suffix_from_args(args):
+    """
+    Build '&k=v' segments from:
+      --instruction key=value      (repeatable)
+      --instructions-yaml <path|inline-yaml-or-json>
+    """
+    kv = {}
+    if getattr(args, "instruction", None):
+        for item in args.instruction:
+            if "=" not in item:
+                raise SystemExit(f"--instruction expects key=value, got: {item}")
+            k, v = item.split("=", 1)
+            kv[k.strip()] = v.strip()
+    if getattr(args, "instructions_yaml", None):
+        content = args.instructions_yaml
+        if os.path.exists(content):
+            with open(content, "r") as f:
+                content = f.read()
+        try:
+            data = json.loads(content)
+        except Exception:
+            data = yaml.safe_load(content)
+        if not isinstance(data, dict):
+            raise SystemExit("--instructions-yaml must resolve to a mapping")
+        for k, v in data.items():
+            kv[str(k)] = "" if v is None else str(v)
+    if not kv:
+        return ""
+    return "".join(f"&{quote_plus(k)}={quote_plus(v)}" for k, v in kv.items())
+
+# --- ORIGINAL helper restored (surgical) ---
+def update_metadata(metadata, miqa_server, run_id, headers):
+    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
+    response = _req("POST", update_metadata_url, json=metadata, headers=headers)
+    if response.ok:
+        return response.json()
+    else:
+        raise Exception(f"Failed to update metadata for {run_id}: [{response.status_code}] {response.text}")
+
 def trigger_offline_test_and_get_run_info(
     miqa_server,
     trigger_id,
@@ -131,8 +182,29 @@ def trigger_offline_test_and_get_run_info(
     raise_if_multi_execs=False,
     debug=False,
 ):
-    url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
-    query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs={raise_if_multi_execs}"
+    # Preserve existing behavior for offline/local path.
+    is_online_mode = (getattr(args, "mode", "offline") == "online")
+    docker_uri = getattr(args, "docker_uri", None)
+
+    if is_online_mode:
+        url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/execute_and_set_details"
+        if docker_uri:
+            # Docker-style online trigger
+            query = f"?app={app_name}&raise_if_multi_execs={raise_if_multi_execs}&uri={quote(docker_uri, safe=':/@._-')}&allow_override=1"
+        else:
+            # Non-docker online trigger (legacy flags retained)
+            query = (
+                f"?app={app_name}"
+                f"&name={version_name}"
+                f"&offline_version=1"
+                f"&skip_check_docker=1&is_non_docker=1&force_create_new=1"
+                f"&uri=example:{version_name}"
+                f"&raise_if_multi_execs={raise_if_multi_execs}"
+            )
+    else:
+        # ORIGINAL path (unchanged)
+        url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
+        query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs={raise_if_multi_execs}"
 
     if additional_query_params and debug:
         print(f"🧪 Raw additional_query_params: [{additional_query_params}]")
@@ -140,13 +212,17 @@ def trigger_offline_test_and_get_run_info(
         print("    " + " ".join(f"{ord(c):02x}" for c in additional_query_params))
         query += additional_query_params
 
+    instruction_suffix = build_instruction_suffix_from_args(args)
+    if instruction_suffix:
+        query += instruction_suffix
+
     url += query
     if debug:
         print(f"🧪 Final URL being called:\n{url}")
 
     body = ds_id_overrides if not local else {}
     print(f"Triggering offline test with body: {json.dumps(body, indent=2)}")
-    response = requests.post(url, json=body, headers=headers)
+    response = _req("POST", url, json=body, headers=headers)
 
     if response.ok:
         return response.json()
@@ -154,18 +230,9 @@ def trigger_offline_test_and_get_run_info(
         print(f"Error: {response.text}")
         raise Exception(f"Failed to kick off the run at url '{url}'")
 
-def update_metadata(metadata, miqa_server, run_id, headers):
-    update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_trigger_info"
-    response = requests.post(update_metadata_url, json=metadata, headers=headers)
-    if response.ok:
-        return response.json()
-    else:
-        print(f"Error: {response.text}")
-        raise Exception(f"Failed to update metadata for {run_id}")
-
 def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key, metadata_value):
     url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_latest_for_metadata?metadata_key={metadata_key}&metadata_value={metadata_value}"
-    response = requests.get(url, headers=headers)
+    response = _req("GET", url, headers=headers)
     if response.ok:
         return response.json().get("tcr_id")
     else:
@@ -174,7 +241,7 @@ def get_latest_tcr_matching_metadata(miqa_server, headers, run_id, metadata_key,
 
 def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
     update_metadata_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/set_version_overrides"
-    response = requests.post(update_metadata_url, json=overrides_lookup, headers=headers)
+    response = _req("POST", update_metadata_url, json=overrides_lookup, headers=headers)
     if response.ok:
         return response.json()
     else:
@@ -185,7 +252,7 @@ def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seco
     status_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_status"
     last_json = None
     for attempt in range(1, max_checks + 1):
-        response = requests.get(status_url, headers=headers)
+        response = _req("GET", status_url, headers=headers)
         try:
             json_res = response.json()
             last_json = json_res
@@ -217,9 +284,6 @@ def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seco
 
     print(f"⏳ Reached max attempts ({max_checks}) without completion.")
     return False, last_json
-    
-        
-import os
 
 def download_report(run_id, report_type, output_folder, miqa_server, headers):
     report_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/{report_type}"
@@ -228,7 +292,7 @@ def download_report(run_id, report_type, output_folder, miqa_server, headers):
     # ✅ Ensure the folder exists
     os.makedirs(output_folder, exist_ok=True)
 
-    response = requests.get(report_url, headers=headers)
+    response = _req("GET", report_url, headers=headers)
     if response.ok:
         with open(report_path, "wb") as f:
             f.write(response.content)
@@ -253,6 +317,8 @@ def log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid
         "Report Folder": args.report_folder,
         "Wait for Completion": str(args.wait_for_completion),
         "Download Reports": ", ".join(args.download_reports or []),
+        "Mode": args.mode,
+        "Docker URI": args.docker_uri or "",
     }
 
     for key, val in display_items.items():
@@ -286,8 +352,7 @@ def main():
             defaults[key] = val
     
     if "report_folder" not in defaults:
-        defaults["report_folder"] = "."
-
+        defaults["report_folder"] = "miqa_reports"
 
     # Step 3: Parse the rest of the args
     parser = argparse.ArgumentParser(description="CLI tool to trigger MIQA tests, upload data, and update metadata.", parents=[config_parser])
@@ -323,11 +388,21 @@ def main():
     parser.add_argument("--raise-if-multi-execs", action='store_true')
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
 
+    # --- online trigger mode + options ---
+    parser.add_argument("--mode", choices=["online", "offline"], default="offline", help="online = trigger only; offline = allow uploads (existing behavior)")
+    parser.add_argument("--docker-uri", type=str, required=False, help="If provided, triggers online run with uri=<DOCKER_URI>&allow_override=1")
+    parser.add_argument("--instruction", action="append", help="Repeatable key=value (e.g., instructionval__workflowVersionName=v1.2.3)")
+    parser.add_argument("--instructions-yaml", type=str, help="Inline YAML/JSON or path to YAML/JSON with instruction params")
+    parser.add_argument("--fail-on-outcome", action="store_true", help="Exit nonzero if outcome not in {pass, passed, success}")
+
     args = parser.parse_args(remaining_argv)
     headers = {"content-type": "application/json", "app-key": args.api_key, "app_key": args.api_key}
     miqa_server = normalize_miqa_endpoint(args.server)
 
-    if not args.locations and not args.locations_file:
+    if args.mode == "online" and not (args.docker_uri or args.version_name):
+        raise SystemExit("online mode requires --docker-uri or --version-name")
+
+    if not args.locations and not args.locations_file and args.mode != "online":
         raise Exception("You must provide either --locations or --locations-file.")
     if args.locations and args.locations_file:
         raise Exception("Please provide only one of --locations or --locations-file (not both).")
@@ -373,48 +448,47 @@ def main():
 
     passed_names_not_in_mapping = False
     locations_lookup_by_sid = {}
-    for sample_name, location_value in locations_lookup_by_samplename.items():
-        sid = ds_id_mapping.get(sample_name)
-        if not sid:
-            passed_names_not_in_mapping = True
-            if args.strict:
-                raise ValueError(f"❌ Strict mode: sample '{sample_name}' not found in trigger mapping.")
-            continue
-
-        if not args.outputs_already_on_cloud:
-            if isinstance(location_value, str) and not os.path.isabs(location_value):
-                if args.docker_mode:
-                    location_value = os.path.join(args.default_parent_path, location_value)
-                else:
-                    location_value = os.path.abspath(location_value)
-        
-            if isinstance(location_value, str) and not os.path.exists(location_value):
-                msg = f"Path does not exist for sample '{sample_name}': {location_value}"
+    if args.mode != "online":
+        for sample_name, location_value in locations_lookup_by_samplename.items():
+            sid = ds_id_mapping.get(sample_name)
+            if not sid:
+                passed_names_not_in_mapping = True
                 if args.strict:
-                    raise FileNotFoundError(f"❌ Strict mode: {msg}")
-                else:
-                    print(f"⚠️ {msg}")
+                    raise ValueError(f"❌ Strict mode: sample '{sample_name}' not found in trigger mapping.")
+                continue
 
-        if args.outputs_already_on_cloud:
-            parsed = convert_location_for_cloud(location_value)
-            if args.output_bucket_override and isinstance(parsed, dict) and "output_bucket" not in parsed:
-                parsed["output_bucket"] = args.output_bucket_override
-            # Apply output_parent_folder prefix if needed
-            if args.output_parent_folder and isinstance(parsed, dict) and "output_folder" in parsed:
-                parsed["output_folder"] = os.path.join(args.output_parent_folder.rstrip("/"), parsed["output_folder"].lstrip("/"))
+            if not args.outputs_already_on_cloud:
+                if isinstance(location_value, str) and not os.path.isabs(location_value):
+                    if args.docker_mode:
+                        location_value = os.path.join(args.default_parent_path, location_value)
+                    else:
+                        location_value = os.path.abspath(location_value)
+            
+                if isinstance(location_value, str) and not os.path.exists(location_value):
+                    msg = f"Path does not exist for sample '{sample_name}': {location_value}"
+                    if args.strict:
+                        raise FileNotFoundError(f"❌ Strict mode: {msg}")
+                    else:
+                        print(f"⚠️ {msg}")
 
-            locations_lookup_by_sid[sid] = parsed
-        else:
-            if not os.path.isabs(location_value):
-                location_value = os.path.join(args.default_parent_path, location_value)
-            locations_lookup_by_sid[sid] = location_value
+            if args.outputs_already_on_cloud:
+                parsed = convert_location_for_cloud(location_value)
+                if args.output_bucket_override and isinstance(parsed, dict) and "output_bucket" not in parsed:
+                    parsed["output_bucket"] = args.output_bucket_override
+                # Apply output_parent_folder prefix if needed
+                if args.output_parent_folder and isinstance(parsed, dict) and "output_folder" in parsed:
+                    parsed["output_folder"] = os.path.join(args.output_parent_folder.rstrip("/"), parsed["output_folder"].lstrip("/"))
 
+                locations_lookup_by_sid[sid] = parsed
+            else:
+                if not os.path.isabs(location_value):
+                    location_value = os.path.join(args.default_parent_path, location_value)
+                locations_lookup_by_sid[sid] = location_value
 
     log_effective_config_with_paths(args, ds_id_mapping, locations_lookup_by_sid)
 
-    if args.strict and not locations_lookup_by_sid:
+    if args.strict and args.mode != "online" and not locations_lookup_by_sid:
         raise RuntimeError("❌ Strict mode: No valid sample paths were resolved. Aborting.")
-
 
     run_info = trigger_offline_test_and_get_run_info(
         miqa_server,
@@ -422,7 +496,7 @@ def main():
         args.version_name,
         headers,
         not args.outputs_already_on_cloud,
-        locations_lookup_by_sid,
+        locations_lookup_by_sid if args.mode != "online" else {},
         app_name=args.app_name,
         additional_query_params=args.additional_query_params,
         raise_if_multi_execs=args.raise_if_multi_execs,
@@ -430,7 +504,7 @@ def main():
     )
     run_id = run_info.get("run_id")
 
-    if not args.outputs_already_on_cloud:
+    if args.mode != "online" and not args.outputs_already_on_cloud:
         for dsid, path in locations_lookup_by_sid.items():
             if isinstance(path, str) and os.path.isfile(path):
                 folder = os.path.dirname(path) or "."
@@ -484,23 +558,30 @@ def main():
     print("\n✅ Miqa Test Chain Run Info:")
     print(json.dumps(run_info, indent=2))
     
+    if args.wait_for_completion and args.fail_on_outcome:
+        outcome = (((final_status or {}).get("data") or {}).get("outcome") or "").lower()
+        if outcome not in {"pass", "passed", "success"}:
+            print(f"❌ Outcome not passing: {outcome or '(unknown)'}")
+            sys.exit(2)
+
     # Warn if no valid samples matched
-    if len(locations_lookup_by_sid) == 0 and passed_names_not_in_mapping:
-        print(
-            "⚠️ None of the sample names you provided match this test trigger.\n"
-            "   Please check your sample names.\n"
-            f"   Available sample names: {', '.join(ds_id_mapping.keys())}"
-        )
+    if args.mode != "online":
+        if len(locations_lookup_by_sid) == 0 and passed_names_not_in_mapping:
+            print(
+                "⚠️ None of the sample names you provided match this test trigger.\n"
+                "   Please check your sample names.\n"
+                f"   Available sample names: {', '.join(ds_id_mapping.keys())}"
+            )
         
-    expected_sample_count = len(ds_id_mapping)
-    provided_sample_count = len(locations_lookup_by_sid)
-    
-    if provided_sample_count == 0:
-        print("⚠️ No files were uploaded for this run.")
-    elif provided_sample_count < expected_sample_count:
-        print(
-            f"⚠️ Only {provided_sample_count} of {expected_sample_count} expected samples were uploaded."
-        )
+        expected_sample_count = len(ds_id_mapping)
+        provided_sample_count = len(locations_lookup_by_sid)
+        
+        if provided_sample_count == 0:
+            print("⚠️ No files were uploaded for this run.")
+        elif provided_sample_count < expected_sample_count:
+            print(
+                f"⚠️ Only {provided_sample_count} of {expected_sample_count} expected samples were uploaded."
+            )
     
     grid_upload_url = run_info.get("details", {}).get("links", {}).get("grid_upload")
     if grid_upload_url:
@@ -518,7 +599,6 @@ def main():
         print("\n🔗 Open the test run here:")
         print(link)
 
-        # If the user specified to open the link, do it
         if args.open_link:
             try:
                 import webbrowser
@@ -526,7 +606,6 @@ def main():
                 webbrowser.open(link)
             except Exception as e:
                 print(f"⚠️ Could not open browser: {e}")
-
 
 if __name__ == "__main__":
     main()
