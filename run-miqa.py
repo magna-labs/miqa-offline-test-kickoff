@@ -181,6 +181,7 @@ def trigger_offline_test_and_get_run_info(
     additional_query_params="",
     raise_if_multi_execs=False,
     debug=False,
+    args=None
 ):
     # Preserve existing behavior for offline/local path.
     is_online_mode = (getattr(args, "mode", "offline") == "online")
@@ -501,6 +502,7 @@ def main():
         additional_query_params=args.additional_query_params,
         raise_if_multi_execs=args.raise_if_multi_execs,
         debug=args.debug,
+        args=args
     )
     run_id = run_info.get("run_id")
 
