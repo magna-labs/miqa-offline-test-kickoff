@@ -400,8 +400,12 @@ def main():
             if args.output_bucket_override and isinstance(parsed, dict) and "output_bucket" not in parsed:
                 parsed["output_bucket"] = args.output_bucket_override
             # Apply output_parent_folder prefix if needed
-            if args.output_parent_folder and isinstance(parsed, dict) and "output_folder" in parsed:
-                parsed["output_folder"] = os.path.join(args.output_parent_folder.rstrip("/"), parsed["output_folder"].lstrip("/"))
+            if args.output_parent_folder:
+                if isinstance(parsed, dict) and "output_folder" in parsed:
+                    parsed["output_folder"] = os.path.join(args.output_parent_folder.rstrip("/"), parsed["output_folder"].lstrip("/"))
+                else:
+                    parsed["output_folder"] = args.output_parent_folder
+                    
 
             locations_lookup_by_sid[sid] = parsed
         else:
