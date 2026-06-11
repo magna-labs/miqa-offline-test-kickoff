@@ -134,10 +134,11 @@ def trigger_offline_test_and_get_run_info(
     url = f"https://{miqa_server}/api/test_trigger/{trigger_id}/{'execute_and_set_details' if not local else 'execute'}"
     query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs={raise_if_multi_execs}"
 
-    if additional_query_params and debug:
-        print(f"🧪 Raw additional_query_params: [{additional_query_params}]")
-        print("🧪 Hexdump of additional_query_params:")
-        print("    " + " ".join(f"{ord(c):02x}" for c in additional_query_params))
+    if additional_query_params:
+        if debug:
+            print(f"🧪 Raw additional_query_params: [{additional_query_params}]")
+            print("🧪 Hexdump of additional_query_params:")
+            print("    " + " ".join(f"{ord(c):02x}" for c in additional_query_params))
         query += additional_query_params
 
     url += query
