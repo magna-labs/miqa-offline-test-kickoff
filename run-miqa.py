@@ -135,10 +135,14 @@ def trigger_offline_test_and_get_run_info(
     query = f"?app={app_name}&name={version_name}&offline_version=1&skip_check_docker=1&is_non_docker=1&raise_if_multi_execs={raise_if_multi_execs}"
 
     if additional_query_params:
+        if not additional_query_params.startswith("&"):
+            additional_query_params = "&" + additional_query_params
+
         if debug:
             print(f"🧪 Raw additional_query_params: [{additional_query_params}]")
             print("🧪 Hexdump of additional_query_params:")
             print("    " + " ".join(f"{ord(c):02x}" for c in additional_query_params))
+
         query += additional_query_params
 
     url += query
@@ -182,6 +186,143 @@ def set_version_overrides(overrides_lookup, miqa_server, run_id, headers):
         print(f"Error: {response.text}", file=sys.stderr)
         sys.exit(1)
 
+def load_test_block_override_settings_file(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Test block override settings file not found: {path}")
+
+    with open(path, "r") as f:
+        if path.endswith((".yaml", ".yml")):
+            data = yaml.safe_load(f)
+        elif path.endswith(".json"):
+            data = json.load(f)
+        else:
+            raise ValueError(f"Unsupported test block override settings file format: {path}")
+
+    if not data:
+        return {}
+
+    if not isinstance(data, dict):
+        raise ValueError("Test block override settings file must contain a mapping.")
+
+    return data.get("test_block_override_settings", data)
+
+
+def normalize_override_settings(raw_settings):
+    """
+    Normalize one test block's override_settings blob.
+
+    Preferred explicit shapes:
+      213:
+        _ds_names:
+          - Sample_A
+          - Sample_B
+
+      213:
+        _skip_ds_names:
+          - Sample_C
+
+      213:
+        _ds_ids:
+          - 838
+          - 839
+
+      213:
+        _skip_ds_ids:
+          - 840
+
+    Also allows shorthand:
+      213:
+        - Sample_A
+        - Sample_B
+
+    Shorthand defaults to _ds_names.
+    """
+    if isinstance(raw_settings, list):
+        return {"_ds_names": raw_settings}
+
+    if not isinstance(raw_settings, dict):
+        raise ValueError(
+            "Each test block override must be either a list of dataset names "
+            "or an object like {'_ds_names': [...]}"
+        )
+
+    settings = dict(raw_settings)
+
+    list_keys = {
+        "_ds_names",
+        "_skip_ds_names",
+        "_ds_ids",
+        "_skip_ds_ids",
+    }
+
+    for key in list_keys:
+        if key in settings and not isinstance(settings[key], list):
+            raise ValueError(f"'{key}' override must be a list.")
+
+    return settings
+
+def normalize_test_block_override_settings(raw_override_lookup):
+    if not raw_override_lookup:
+        return {}
+
+    if not isinstance(raw_override_lookup, dict):
+        raise ValueError("test_block_override_settings must be a mapping keyed by test block ID.")
+
+    normalized = {}
+    for testblock_id, raw_settings in raw_override_lookup.items():
+        normalized[str(testblock_id)] = normalize_override_settings(raw_settings)
+
+    return normalized
+
+
+def set_test_block_override_settings_for_tcr(
+    miqa_server,
+    run_id,
+    override_settings_lookup,
+    headers,
+    strict=False,
+):
+    if not override_settings_lookup:
+        return None
+
+    update_url = (
+        f"https://{miqa_server}/api/test_chain_run/"
+        f"{run_id}/set_test_block_override_settings"
+    )
+
+    response = requests.post(
+        update_url,
+        json={"test_block_override_settings": override_settings_lookup},
+        headers=headers,
+    )
+
+    if response.ok:
+        print(f"✅ Applied test block override settings for run {run_id}.")
+        return response.json()
+
+    if response.status_code in (404, 405):
+        msg = (
+            "Miqa instance does not appear to support "
+            "set_test_block_override_settings yet. Continuing without test block overrides."
+        )
+        if strict:
+            raise RuntimeError(f"❌ Strict mode: {msg}")
+        print(f"⚠️ {msg}")
+        return None
+
+    print(f"Error setting test block override settings: {response.text}", file=sys.stderr)
+
+    if strict:
+        raise RuntimeError(
+            f"Failed to set test block override settings for run {run_id}: {response.text}"
+        )
+
+    print(
+        "⚠️ Continuing without test block overrides because setting overrides failed. "
+        "Use --strict to fail instead."
+    )
+    return None
+
 def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seconds):
     status_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/get_status"
     last_json = None
@@ -220,8 +361,6 @@ def poll_for_completion(run_id, miqa_server, headers, max_checks, frequency_seco
     return False, last_json
     
         
-import os
-
 def download_report(run_id, report_type, output_folder, miqa_server, headers):
     report_url = f"https://{miqa_server}/api/test_chain_run/{run_id}/{report_type}"
     report_path = os.path.join(output_folder, f"Miqa_Test_Report_{run_id}.{report_type}")
@@ -281,7 +420,7 @@ def main():
             defaults = yaml.safe_load(f) if config_args.config.endswith((".yaml", ".yml")) else json.load(f)
     
     # Step 2: Use env vars for fallback if not in config
-    for key in ["server", "api_key", "trigger_id", "version_name", "locations", "report_folder", "output_parent_folder"]:
+    for key in ["server", "api_key", "trigger_id", "version_name", "locations", "report_folder", "output_parent_folder", "test_block_override_settings_file"]:
         val = os.getenv(f"MIQA_{key.upper()}")
         if val and key not in defaults:
             defaults[key] = val
@@ -303,6 +442,12 @@ def main():
     parser.add_argument("--set-metadata", type=str, required=False)
     parser.add_argument("--locations", type=str, required=False)
     parser.add_argument("--locations-file", type=str, required=False)
+    parser.add_argument(
+        "--test-block-override-settings-file",
+        type=str,
+        required=False,
+        help="Optional YAML/JSON file mapping test block IDs to override_settings blobs, e.g. {'213': {'_ds_names': [...]}}",
+    )
     parser.add_argument("--output-bucket-override", type=str, required=False)
     parser.add_argument("--json-output-file", type=str, required=False, help="Optional path to write JSON summary")
     parser.add_argument("--app-name", type=str, required=False, default="mn", help="App name to include in the trigger call (e.g. 'mn' or 'gh')")
@@ -334,6 +479,10 @@ def main():
         raise Exception("Please provide only one of --locations or --locations-file (not both).")
     if args.locations_file and not os.path.exists(args.locations_file):
         raise FileNotFoundError(f"Locations file not found: {args.locations_file}")
+    if args.test_block_override_settings_file and not os.path.exists(args.test_block_override_settings_file):
+        raise FileNotFoundError(
+            f"Test block override settings file not found: {args.test_block_override_settings_file}"
+        )
 
     if args.locations_file:
         locations_lookup_by_samplename = load_locations_from_file(args.locations_file)
@@ -366,6 +515,15 @@ def main():
 
     set_metadata_raw = interpolate_env_variables(args.set_metadata or "")
     set_metadata_dict = parse_yaml_or_json(set_metadata_raw) if args.set_metadata else None
+
+    test_block_override_settings = None
+    if args.test_block_override_settings_file:
+        raw_test_block_override_settings = load_test_block_override_settings_file(
+            args.test_block_override_settings_file
+        )
+        test_block_override_settings = normalize_test_block_override_settings(
+            raw_test_block_override_settings
+        )
 
     response = get_trigger_info(miqa_server, args.trigger_id)
     if not isinstance(response, dict):
@@ -434,6 +592,22 @@ def main():
         debug=args.debug,
     )
     run_id = run_info.get("run_id")
+
+    if not run_id:
+        raise RuntimeError(
+            f"Miqa kickoff response did not include run_id: {json.dumps(run_info, indent=2)}"
+        )
+
+    if test_block_override_settings:
+        print("📋 Test block override settings requested:")
+        print(json.dumps(test_block_override_settings, indent=2))
+        set_test_block_override_settings_for_tcr(
+            miqa_server,
+            run_id,
+            test_block_override_settings,
+            headers,
+            strict=args.strict,
+        )
 
     if not args.outputs_already_on_cloud:
         for dsid, path in locations_lookup_by_sid.items():
